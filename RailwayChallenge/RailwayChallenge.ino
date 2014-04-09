@@ -40,7 +40,7 @@ float motorOneSpeed = 0;
 float motorTwoSpeed = 0;
 
 //Toggle Switches 
-bool genEnable = true;
+bool genEnable = false;
 bool regenEnable = false; 
 bool forwardDrive = true;
 
@@ -81,7 +81,6 @@ void setup() {
   if(Serial1.available() < 1)
   {
     Serial.println("Controler disconnected");
-    Serial.println(trainPrep());
   }
   else
   {
@@ -101,6 +100,7 @@ void setup() {
       }
     }
   }
+  Serial.println(trainPrep());
   Serial.println("Debug Mode");
 }
 //byte serialIndex = Serial.readBytesUntil(termChar, serialBuffer, serialBufferLength); 
@@ -174,12 +174,12 @@ void controlerCommand(byte serialIndex)
 //This is for debug commands
 void debugCommand(byte serialIndex)
 {
-  char charCommand[serialIndex+1];
-  for(int n = 0; n <= serialIndex; n ++)
+  char charCommand[serialIndex];
+  for(int n = 0; n < serialIndex; n ++)
   {
     charCommand[n] = serialBuffer[n];
   }
-  //charCommand[serialIndex] = '\0';
+  charCommand[serialIndex] = '\0';
   String command = String(charCommand);
   if(command == "list")
   {
@@ -216,6 +216,17 @@ void debugCommand(byte serialIndex)
   else if(command == "coast")
   {
     Inverters.coast();
+  }
+  else if(command == "startgen")
+  {
+    if(startGenorator())
+      Serial.println("Genorator Online");
+    else
+      Serial.println("Genorator Failed To Start");
+  }
+  else if(command == "stopgen")
+  {
+    stopGenorator();
   }
   else if(command == "sensors")
   {
@@ -340,9 +351,19 @@ String trainPrep()
   {
     returnString += "BRAKES WILL NOT RELEASE, ";
   }
+  digitalWrite(29, LOW);
   
   if(returnString == "FAIL: ")
+  {
     returnString = "ALL TESTS PASSED";
+    digitalWrite(redLED, LOW);
+    digitalWrite(greenLED, HIGH);
+  }
+  else
+  {
+    digitalWrite(redLED, HIGH);
+    digitalWrite(greenLED, LOW); 
+  }
   
   return returnString;
 }
@@ -387,6 +408,10 @@ void processSerialCommand(byte index)
           genEnable = false;
         }
     }
+    else if (bytes[0] == 'P')
+    {
+      Inverters.setSpeed(bytes[1]);
+    }
   }
 }
 
@@ -411,5 +436,11 @@ bool startGenorator()
   }
   digitalWrite(26, LOW);
   return true;
+}
+
+void stopGenorator()
+{
+  digitalWrite(24, LOW);
+  digitalWrite(25, LOW);
 }
   
