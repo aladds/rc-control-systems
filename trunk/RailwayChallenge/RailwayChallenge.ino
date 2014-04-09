@@ -9,6 +9,7 @@ const byte thermistorOne = 0;
 const byte thermistorTwo = 1;
 const byte greenLED = 42;
 const byte redLED = 43;
+const int relayDelay = 200;
 
 //input relays
 const byte RT = 47;
@@ -39,7 +40,7 @@ float motorOneSpeed = 0;
 float motorTwoSpeed = 0;
 
 //Toggle Switches 
-bool genEnable = false;
+bool genEnable = true;
 bool regenEnable = false; 
 bool forwardDrive = true;
 
@@ -80,7 +81,7 @@ void setup() {
   if(Serial1.available() < 1)
   {
     Serial.println("Controler disconnected");
-    trainPrep();
+    Serial.println(trainPrep());
   }
   else
   {
@@ -277,13 +278,73 @@ void motorTwoSpeedInterupt()
 
 String trainPrep()
 {
+  Serial.println("Starting Train Prep");
+  
+  String returnString = "FAIL: ";
+  
   //Check inital relay states note that ALL inputs are inverse
   //All relays should be OPEN
-  if(digitalRead(RT) && digitalRead(SBC) && digitalRead(BPS) && digitalRead(GH) && digitalRead(COMC) && digitalRead(MIC))
+  if(!(digitalRead(RT) && digitalRead(SBC) && digitalRead(BPS) && digitalRead(GH) && digitalRead(COMC) && digitalRead(MIC)))
   {
-    Serial.println("Everything is good");
-    //Everything is good
+    returnString += "INITAL RELAY STATES WRONG, ";
+    return returnString;
   }
+  //Next roundtrain tests
+  digitalWrite(31, HIGH); //RTC RELAY
+  digitalWrite(32, HIGH); //Fire relay
+  delay(relayDelay);
+  if(digitalRead(RT))// if RT not on
+  {
+    returnString += "RTC DID NOT COME UP, ";
+  }
+  digitalWrite(31, LOW);
+  delay(relayDelay);
+  if(!digitalRead(RT))
+  {
+    returnString += "RTC UP AFTER RTC OPEN, ";
+  }
+  digitalWrite(31, HIGH);
+  digitalWrite(32, LOW);
+  delay(relayDelay);
+  if(!digitalRead(RT))
+  {
+    returnString += "RTC UP AFTER FIRE OPEN, ";
+  }
+  digitalWrite(31, LOW);
+  digitalWrite(33, HIGH);
+  delay(relayDelay);
+  if(digitalRead(SBC))
+  {
+    returnString += "SBC DID NOT COME UP, ";
+  }
+  //Perform brake test
+  digitalWrite(31, HIGH); // Enable RTC
+  digitalWrite(32, HIGH); // Fire Systems Healthy
+  if(forwardDrive)
+    digitalWrite(27, HIGH);
+  else
+    digitalWrite(28, HIGH);
+    
+  if(genEnable)
+  {
+    if(!startGenorator())
+    {
+      returnString += "GEN WILL NOT START, ";
+    }
+  }   
+  
+  digitalWrite(29, HIGH); // Release Brakes
+  delay(3000); // 3 seconds for brakes to disengage
+
+  if(digitalRead(BPS))
+  {
+    returnString += "BRAKES WILL NOT RELEASE, ";
+  }
+  
+  if(returnString == "FAIL: ")
+    returnString = "ALL TESTS PASSED";
+  
+  return returnString;
 }
 
 void processSerialCommand(byte index)
@@ -328,3 +389,27 @@ void processSerialCommand(byte index)
     }
   }
 }
+
+bool startGenorator()
+{
+  unsigned long startTime = millis();
+  digitalWrite(24, HIGH);
+  delay(relayDelay);
+  digitalWrite(25, HIGH);
+  delay(relayDelay);
+  digitalWrite(26, HIGH);
+  while(digitalRead(GH))
+  {
+    delay(100);
+    if(startTime + 4000 < millis())
+    {
+      digitalWrite(24, LOW);
+      digitalWrite(25, LOW);
+      digitalWrite(26, LOW);
+      return false;
+    }
+  }
+  digitalWrite(26, LOW);
+  return true;
+}
+  
