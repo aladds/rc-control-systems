@@ -1,7 +1,7 @@
 #include "InverterController.h"
 
 //Program storage space variables
-const String pinMap[] PROGMEM = {"R-RGC","R-RGD","R-GER1","R-GER2","R-GES","R-LTF","R-LTR","Z-BR-PLC","R-WHS","R-CSRT","R-FSH","R-CSSB","R-MIE","R-CEN","STF","STR","RM1","RH1","RM2","RH2","LEDG","LEDR"};
+const String pinMap[] = {"R-RGC","R-RGD","R-GER1","R-GER2","R-GES","R-LTF","R-LTR","Z-BR-PLC","R-WHS","R-CSRT","R-FSH","R-CSSB","R-MIE","R-CEN","STF","STR","RM1","RH1","RM2","RH2","LEDG","LEDR"};
 const byte pinCount = 22;//This is the length of pinMap
 const byte pinOffset = 22;
 const byte serialBufferLength = 128;
@@ -174,7 +174,7 @@ void controlerCommand(byte serialIndex)
 //This is for debug commands
 void debugCommand(byte serialIndex)
 {
-  char charCommand[serialIndex];
+  char charCommand[serialIndex+1];
   for(int n = 0; n < serialIndex; n ++)
   {
     charCommand[n] = serialBuffer[n];
@@ -227,6 +227,10 @@ void debugCommand(byte serialIndex)
   else if(command == "stopgen")
   {
     stopGenorator();
+  }
+  else if(command == "flick")
+  {
+    flick();
   }
   else if(command == "sensors")
   {
@@ -442,5 +446,16 @@ void stopGenorator()
 {
   digitalWrite(24, LOW);
   digitalWrite(25, LOW);
+}
+
+void flick()
+{
+  for(int n = pinOffset; n < pinCount+pinOffset; n++)
+  {
+    togglePin(n);
+    delay(relayDelay);
+    togglePin(n);
+    delay(relayDelay);
+  }
 }
   
