@@ -1,7 +1,7 @@
 #include "InverterController.h"
 
 //Program storage space variables
-const String pinMap[] = {"R-RGC","R-RGD","R-GER1","R-GER2","R-GES","R-LTF","R-LTR","Z-BR-PLC","R-WHS","R-CSRT","R-FSH","R-CSSB","R-MIE","R-CEN","STF","STR","RM1","RH1","RM2","RH2","LEDG","LEDR"};
+const String pinMap[] = {"R-RGC","R-RGD","R-GER1","R-GER2","R-GES","R-LTF","R-LTR","Z-BR-PLC","R-WHS","R-CSRT","R-FSH","R-CSSB","R-MIE","R-CEN","RH1","RM2","RH2","STF","STR","RM1","LEDG","LEDR"};
 const byte pinCount = 22;//This is the length of pinMap
 const byte pinOffset = 22;
 const byte serialBufferLength = 128;
@@ -25,7 +25,7 @@ byte serialBuffer[serialBufferLength];
 byte controlBuffer[serialBufferLength];
 byte bufferIndex = 0;
 byte controlIndex = 0;
-InverterController Inverters(36, 37, 38, 39, 40, 41);
+InverterController Inverters(39, 40, 41, 36, 37, 38);
 
 //Thermistors
 int thermistorOneReading;
