@@ -1,7 +1,7 @@
 #include "InverterController.h"
 
 //Program storage space variables
-const String pinMap[] = {"R-RGC","R-RGD","R-GER1","R-GER2","R-GES","R-LTF","R-LTR","Z-BR-PLC","R-WHS","R-CSRT","R-FSH","R-CSSB","R-MIE","R-CEN","RH1","RM2","RH2","STF","STR","RM1","LEDG","LEDR"};
+const String pinMap[] = {"R-RGC","R-RGD","R-GER1","R-GER2","R-GES","R-LTF","R-LTR","Z-BR-PLC","R-WHS","R-CSRT","R-FSH","R-CSSB","R-MIE","R-CEN","STF","STR","RM1","RH1","RM2","RH2","LEDG","LEDR"};
 const byte pinCount = 22;//This is the length of pinMap
 const byte pinOffset = 22;
 const byte serialBufferLength = 128;
@@ -25,7 +25,7 @@ byte serialBuffer[serialBufferLength];
 byte controlBuffer[serialBufferLength];
 byte bufferIndex = 0;
 byte controlIndex = 0;
-InverterController Inverters(39, 40, 41, 36, 37, 38);
+InverterController Inverters(36, 37, 38, 39, 40, 41);
 
 //Thermistors
 int thermistorOneReading;
@@ -73,6 +73,8 @@ void setup() {
   Serial.begin(9600);
   Serial1.begin(9600);
   
+  Serial1.println("Serial 1");
+  
   //Request Controler state
   Serial.println("Requesting Config from Controller");
   delay(500);
@@ -104,9 +106,17 @@ void setup() {
   Serial.println("Debug Mode");
 }
 //byte serialIndex = Serial.readBytesUntil(termChar, serialBuffer, serialBufferLength); 
-
+byte ledFlash = 0;
 void loop() {
-  
+  if(ledFlash < 255)
+  {
+    ledFlash++;
+  }
+  else
+  {
+    digitalWrite(greenLED, !digitalRead(greenLED));
+    ledFlash = 0;
+  }
   //Check USB serial for debug commands
   while(Serial.available() > 0)
   {
@@ -132,12 +142,14 @@ void loop() {
     byte byteIn = Serial1.read();
     if(byteIn == '\n')
     {
+      digitalWrite(redLED, !digitalRead(redLED));
       //Do some work
       controlerCommand(controlIndex);      
       controlIndex = 0;
     }
     else
     {
+      Serial1.println('A');
       controlBuffer[controlIndex] = byteIn;
       controlIndex++;
     }
@@ -169,6 +181,10 @@ int getPinNumber(String pinName)
 void controlerCommand(byte serialIndex)
 {
   //Do Some Work
+  for(int s = 0; s < serialIndex; s++)
+  {
+    Serial1.println(controlBuffer[s]);
+  }
 }
 
 //This is for debug commands
@@ -227,6 +243,21 @@ void debugCommand(byte serialIndex)
   else if(command == "stopgen")
   {
     stopGenorator();
+  }
+  else if(command == "inputs")
+  {
+    Serial.print("RT: ");
+    Serial.println(!digitalRead(RT));
+    Serial.print("SBC: ");
+    Serial.println(!digitalRead(SBC));
+    Serial.print("BPS: ");
+    Serial.println(!digitalRead(BPS));
+    Serial.print("GH: ");
+    Serial.println(!digitalRead(GH));
+    Serial.print("COMC: ");
+    Serial.println(!digitalRead(COMC));
+    Serial.print("MIC: ");
+    Serial.println(!digitalRead(MIC));
   }
   else if(command == "flick")
   {
@@ -302,7 +333,6 @@ String trainPrep()
   if(!(digitalRead(RT) && digitalRead(SBC) && digitalRead(BPS) && digitalRead(GH) && digitalRead(COMC) && digitalRead(MIC)))
   {
     returnString += "INITAL RELAY STATES WRONG, ";
-    return returnString;
   }
   //Next roundtrain tests
   digitalWrite(31, HIGH); //RTC RELAY
