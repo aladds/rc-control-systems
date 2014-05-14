@@ -33,11 +33,12 @@ int thermistorTwoReading;
 
 //hall effect sensors, default 20,000 ~= 4m/s
 unsigned long motorOnePeriod = 2857;
-unsigned long motorTwoPeriod = 20000;
+unsigned long motorTwoPeriod = 4000;
 unsigned long motorOneLastTick = 0;
 unsigned long motorTwoLastTick = 0;
-float motorOneSpeed = 0;
-float motorTwoSpeed = 0;
+//changed from float to byte as hz are only between 0 and 120 anyway
+byte motorOneSpeed = 0;
+byte motorTwoSpeed = 0;
 
 //Toggle Switches 
 bool genEnable = false;
@@ -70,15 +71,15 @@ void setup() {
   attachInterrupt(3, motorTwoSpeedInterupt, FALLING);
   
   //Start Serial
-  Serial.begin(9600);
-  Serial1.begin(9600);
+  Serial.begin(19200);
+  Serial1.begin(19200);
   
   Serial1.println("Serial 1");
   
   //Request Controler state
   Serial.println("Requesting Config from Controller");
   delay(500);
-  Serial1.println('S0');//Start
+  Serial1.println("Q0");
   delay(500);
   if(Serial1.available() < 1)
   {
@@ -106,21 +107,32 @@ void setup() {
   Serial.println("Debug Mode");
 }
 //byte serialIndex = Serial.readBytesUntil(termChar, serialBuffer, serialBufferLength); 
-byte ledFlash = 0;
+unsigned int ledFlash = 0;
 void loop() {
-  if(ledFlash < 255)
+  if(ledFlash < 65534)
   {
     ledFlash++;
   }
   else
   {
-    digitalWrite(greenLED, !digitalRead(greenLED));
+    digitalWrite(greenLED, HIGH);
     ledFlash = 0;
+    //Thermistor Reading
+    thermistorOneReading = analogRead(thermistorOne)/2.56;
+    thermistorTwoReading = analogRead(thermistorTwo)/2.56;
+    
+    //Speed Reading
+    // 1Hz speed is 142857us period
+    motorOneSpeed = 1000000/(motorOnePeriod*7); // this is in Hz
+    motorTwoSpeed = 1000000/(motorTwoPeriod*7); // this is in Hz
+
+    serialUpdate();
+    digitalWrite(greenLED, LOW);
   }
   //Check USB serial for debug commands
-  while(Serial.available() > 0)
+  while(Serial1.available() > 0)
   {
-    byte byteIn = Serial.read();
+    byte byteIn = Serial1.read();
     if(byteIn == '\n' || byteIn == '\r')
     {
       //do some work
@@ -137,45 +149,47 @@ void loop() {
   }
   
   //Check Controler serial link for commands
-  while(Serial1.available() > 0)
+  while(Serial.available() > 0)
   {
-    byte byteIn = Serial1.read();
-    if(byteIn == '\n')
+    byte byteIn = Serial.read();
+    if(byteIn == '\n' || byteIn == '\r')
     {
-      digitalWrite(redLED, !digitalRead(redLED));
+      //flash red LED to indicate serial coms
+      //digitalWrite(redLED, !digitalRead(redLED));
       //Do some work
       controlerCommand(controlIndex);      
       controlIndex = 0;
     }
     else
     {
-      Serial1.println('A');
       controlBuffer[controlIndex] = byteIn;
       controlIndex++;
     }
   }
-  
-  //Thermistor Reading
-  thermistorOneReading = analogRead(thermistorOne);
-  thermistorTwoReading = analogRead(thermistorTwo);
-  
-  //Speed Reading
-  // 1Hz speed is 142857us period
-  motorOneSpeed = 1000000/(motorOnePeriod*7); // this is in Hz
-  motorTwoSpeed = 1000000/(motorTwoPeriod*7); // this is in Hz
 }
 
-int getPinNumber(String pinName)
+void serialUpdate()
 {
-  for(int n = 0; n < pinCount; n++)
+  Serial1.write('T');
+  Serial1.write(thermistorOneReading);
+  Serial1.write('Y');
+  Serial1.write(thermistorTwoReading);
+  Serial1.write('V');
+  Serial1.write(motorOneSpeed);
+  Serial1.write('B');
+  Serial1.write(motorTwoSpeed);
+  Serial1.write('R');
+  byte states = 0;
+    //note: MIC is the last input pin, RT is the first
+  for(byte b = 0; b < MIC - RT; b++)
   {
-    if(pinMap[n] == (pinName))
-    {
-      return n + pinOffset;
-    }
+    states |= (digitalRead(RT+b) << b);
   }
-  return -1;
+  Serial1.write(states);
+  Serial1.write('\n');
 }
+
+
 
 //Comands from the hand held controler
 void controlerCommand(byte serialIndex)
@@ -183,7 +197,77 @@ void controlerCommand(byte serialIndex)
   //Do Some Work
   for(int s = 0; s < serialIndex; s++)
   {
-    Serial1.println(controlBuffer[s]);
+    //checksum
+    if(s + 2 < serialIndex && controlBuffer[s+1] == controlBuffer[s+2])
+    {
+      switch (controlBuffer[s])
+      {
+        case 'S': //Speed
+          Inverters.setSpeed(controlBuffer[s+1]);
+          
+          Serial.print("SPEED COMMAND ");
+          Serial.println(controlBuffer[s+1]);
+          s += 2;
+          break;
+        case 'D': //Direction
+          if(commandState(controlBuffer[s+1])
+          {
+            Inverters.driveForward();
+          }
+          else
+          {
+            Inverters.driveReverse();
+          }
+          s += 2;
+          break;
+        case 'G': //Genorator
+          if(commandState(controlBuffer[s+1])
+          {
+            startGenorator();
+          }
+          else
+          {
+            stopGenorator();
+          }
+          s += 2;
+          break;
+        case 'W': //Whistle
+          if(commandState(controlBuffer[s+1])
+          {
+            togglePin(30);
+          }
+          s += 2;
+          break;
+        case 'C': // Charge Regen
+          if(commandState(controlBuffer[s+1])
+          {
+            //charge regen
+          }
+          s += 2;
+          break;
+        case 'Z': //Drive Regen
+          if(!commandState(controlBuffer[s+1])
+          {
+            //Drive Regen
+          }
+          s += 2;
+          break;
+      }
+    }
+  }
+}
+
+bool commandState(byte state)
+{
+  //170 = 10101010 = true
+  if(controlBuffer[s+1] == 170)
+  {
+    return true;
+  }
+  //85 = 01010101 = false
+  else if(controlBuffer[s+1] == 85)
+  {
+    return false;
   }
 }
 
@@ -487,5 +571,17 @@ void flick()
     togglePin(n);
     delay(relayDelay);
   }
+}
+
+int getPinNumber(String pinName)
+{
+  for(int n = 0; n < pinCount; n++)
+  {
+    if(pinMap[n] == (pinName))
+    {
+      return n + pinOffset;
+    }
+  }
+  return -1;
 }
   
