@@ -12,7 +12,14 @@ byte inputCount = 8;
 byte controlBuffer[128];
 byte controlIndex = 0;
 
+//persistant states
+bool genState = false;
+bool directionState = false;
+
 byte con = 64;
+
+const byte serialTrue = 170;
+const byte serialFalse = 85;
 
 byte smiley[8] = {
   B00000,
@@ -94,13 +101,73 @@ void loop() {
       controlIndex++;
     }
   }
-  for(int n = inputPinOffset; n < inputCount; n++)
+  bool curDir = !digitalRead(38);
+  if(curDir != directionState)
   {
-    if(digitalRead(n) == HIGH)
+    directionState = curDir;
+    if(curDir == true)
     {
-      lcd.clear();
-      lcd.print(inputs[n-inputPinOffset]);
-      lcd.print(" is HIGH!");
+      Serial1.write('D');
+      Serial1.write(serialTrue);
+      Serial1.write(serialTrue);
+      Serial1.write('\n');
+    }
+    else
+    {
+      Serial1.write('D');
+      Serial1.write(serialFalse);
+      Serial1.write(serialFalse);
+      Serial1.write('\n');
+    }
+  }
+  
+  bool curGen = !digitalRead(40);
+  if(curDir != directionState)
+  {
+    directionState = curDir;
+    if(curDir == true)
+    {
+      Serial1.write('G');
+      Serial1.write(serialTrue);
+      Serial1.write(serialTrue);
+      Serial1.write('\n');
+    }
+    else
+    {
+      Serial1.write('G');
+      Serial1.write(serialFalse);
+      Serial1.write(serialFalse);
+      Serial1.write('\n');
+    }
+  }
+  
+  for(int n = inputPinOffset+3; n < inputCount + inputPinOffset; n++)
+  {
+    if(digitalRead(n) == LOW)
+    {
+      if(inputs[n] == "Faster")
+      {
+        Serial1.write('G');
+        Serial1.write(serialTrue);
+        Serial1.write(serialTrue);
+        Serial1.write('\n');
+      }
+      if(inputs[n] == "Slower")
+      {
+        
+      }
+      if(inputs[n] == "RegenDrive")
+      {
+        
+      }
+      if(inputs[n] == "RegenCharge")
+      {
+        
+      }
+      if(inputs[n] == "Whistle")
+      {
+        
+      }
     }
   }
 }
