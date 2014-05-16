@@ -50,25 +50,25 @@ byte smiley[8] = {
 };
 
 byte roundelLeft[8] = {
-	0b00000,
-	0b00011,
-	0b00110,
-	0b01100,
-	0b11111,
-	0b01100,
-	0b00110,
-	0b00011
+	B00000,
+	B00011,
+	B00110,
+	B01100,
+	B11111,
+	B01100,
+	B00110,
+	B00011
 };
 
 byte roundelRight[8] = {
-	0b00000,
-	0b11000,
-	0b01100,
-	0b00110,
-	0b11111,
-	0b00110,
-	0b01100,
-	0b11000
+	B00000,
+	B11000,
+	B01100,
+	B00110,
+	B11111,
+	B00110,
+	B01100,
+	B11000
 };
 
 void setup() {
@@ -80,8 +80,6 @@ void setup() {
   //Start up serial link to train
   Serial.begin(19200);
   Serial1.begin(19200);
-  
-  
   
   //intialse LCD
   lcd.begin(20,4);
@@ -269,7 +267,6 @@ void controlerCommand(byte serialIndex)
         break;
       case 'B': //spd2
         Serial.println("spd2");
-        
         s += 1;
         break;
       case 'R': //Relay States
@@ -339,6 +336,7 @@ void updateLCD()
       lcd.print("kph");
       break;
     case 2://Relay states
+      
       break;
   }
 }
