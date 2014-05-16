@@ -10,6 +10,7 @@ const byte thermistorTwo = 1;
 const byte greenLED = 42;
 const byte redLED = 43;
 const int relayDelay = 200;
+const unsigned long updateTime = 1777;
 
 //input relays
 const byte RT = 47;
@@ -25,6 +26,8 @@ byte serialBuffer[serialBufferLength];
 byte controlBuffer[serialBufferLength];
 byte bufferIndex = 0;
 byte controlIndex = 0;
+bool connectionLost = true; //WIll stop train and request config
+bool connectionTimeout = false; // for connection timeout
 InverterController Inverters(36, 37, 38, 39, 40, 41);
 
 //Thermistors
@@ -85,38 +88,28 @@ void setup() {
   {
     Serial.println("Controler disconnected");
   }
-  else
-  {
-    while(Serial1.available() > 0)
-    {
-      byte byteIn = Serial1.read();
-      if(byteIn == '\n')
-      {
-        //Do some work
-        processSerialCommand(controlIndex);      
-        controlIndex = 0;
-      }
-      else
-      {
-        controlBuffer[controlIndex] = byteIn;
-        controlIndex++;
-      }
-    }
-  }
   Serial.println(trainPrep());
   Serial.println("Debug Mode");
 }
 //byte serialIndex = Serial.readBytesUntil(termChar, serialBuffer, serialBufferLength); 
-unsigned int ledFlash = 0;
+unsigned long lastUpdateTime = millis();
 void loop() {
-  if(ledFlash < 65534)
+  if(millis() >= updateTime + lastUpdateTime)
   {
-    ledFlash++;
-  }
-  else
-  {
+    lastUpdateTime = millis();
+    
+    if(connectionTimeout == true)
+    {
+      connectionLost = true;
+    }
+    else
+    {
+      connectionTimeout = true;
+    }
+    
+    Serial.println("\nStartUpdate");
     digitalWrite(greenLED, HIGH);
-    ledFlash = 0;
+
     //Thermistor Reading
     thermistorOneReading = analogRead(thermistorOne)/2.56;
     thermistorTwoReading = analogRead(thermistorTwo)/2.56;
@@ -127,8 +120,10 @@ void loop() {
     motorTwoSpeed = 1000000/(motorTwoPeriod*7); // this is in Hz
 
     serialUpdate();
+    Serial.println("EndUpdate\n");
     digitalWrite(greenLED, LOW);
   }
+  
   //Check USB serial for debug commands
   while(Serial1.available() > 0)
   {
@@ -166,6 +161,14 @@ void loop() {
       controlIndex++;
     }
   }
+  
+  if(connectionLost)
+  {
+    //Stop The Train
+    Inverters.setSpeed(0);
+    Serial1.println("Q0");
+    connectionLost = false;
+  }
 }
 
 void serialUpdate()
@@ -197,6 +200,10 @@ void controlerCommand(byte serialIndex)
   //Do Some Work
   for(int s = 0; s < serialIndex; s++)
   {
+
+    connectionTimeout = false;
+    connectionLost = false;
+    
     //checksum
     if(s + 2 < serialIndex && controlBuffer[s+1] == controlBuffer[s+2])
     {
@@ -204,13 +211,10 @@ void controlerCommand(byte serialIndex)
       {
         case 'S': //Speed
           Inverters.setSpeed(controlBuffer[s+1]);
-          
-          Serial.print("SPEED COMMAND ");
-          Serial.println(controlBuffer[s+1]);
           s += 2;
           break;
         case 'D': //Direction
-          if(commandState(controlBuffer[s+1])
+          if(commandState(controlBuffer[s+1]))
           {
             Inverters.driveForward();
           }
@@ -221,7 +225,7 @@ void controlerCommand(byte serialIndex)
           s += 2;
           break;
         case 'G': //Genorator
-          if(commandState(controlBuffer[s+1])
+          if(commandState(controlBuffer[s+1]))
           {
             startGenorator();
           }
@@ -232,21 +236,21 @@ void controlerCommand(byte serialIndex)
           s += 2;
           break;
         case 'W': //Whistle
-          if(commandState(controlBuffer[s+1])
+          if(commandState(controlBuffer[s+1]))
           {
             togglePin(30);
           }
           s += 2;
           break;
         case 'C': // Charge Regen
-          if(commandState(controlBuffer[s+1])
+          if(commandState(controlBuffer[s+1]))
           {
             //charge regen
           }
           s += 2;
           break;
         case 'Z': //Drive Regen
-          if(!commandState(controlBuffer[s+1])
+          if(!commandState(controlBuffer[s+1]))
           {
             //Drive Regen
           }
@@ -260,12 +264,12 @@ void controlerCommand(byte serialIndex)
 bool commandState(byte state)
 {
   //170 = 10101010 = true
-  if(controlBuffer[s+1] == 170)
+  if(state == 170)
   {
     return true;
   }
   //85 = 01010101 = false
-  else if(controlBuffer[s+1] == 85)
+  else if(state == 85)
   {
     return false;
   }
