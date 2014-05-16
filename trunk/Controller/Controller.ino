@@ -18,6 +18,7 @@ bool directionState = false;
 bool regenChargeState = false;
 bool regenDriveState = false;
 bool whistleState = false;
+bool relayStates[6] = {false, false, false, false, false, false};
 
 //Variables
 byte temp1 = 0;
@@ -80,6 +81,8 @@ void setup() {
   //Start up serial link to train
   Serial.begin(19200);
   Serial1.begin(19200);
+  
+  Serial.println(true);
   
   //intialse LCD
   lcd.begin(20,4);
@@ -270,7 +273,16 @@ void controlerCommand(byte serialIndex)
         s += 1;
         break;
       case 'R': //Relay States
-        Serial.println("RelayStates");
+        
+        byte states = controlBuffer[s+1];
+        Serial.print("RelayStates ");
+        for(int k = 0; k < 6; k++)
+        {
+          relayStates[k] = (states >> k) & B00000001;
+          Serial.print(relayStates[k], BIN);
+        }
+        Serial.print("\n");
+        
         updateScreen[2] = true;
         s += 1;
         break;
@@ -336,7 +348,22 @@ void updateLCD()
       lcd.print("kph");
       break;
     case 2://Relay states
-      
+      lcd.print(" Relay States");
+      lcd.setCursor(0,1);
+      lcd.print("Rnd Trn:");
+      lcd.print(relayStates[0]);
+      lcd.print("|Brake PS:");
+      lcd.print(relayStates[3]);
+      lcd.setCursor(0,2);
+      lcd.print("    SBC:");
+      lcd.print(relayStates[1]);
+      lcd.print("|    COMC:");
+      lcd.print(relayStates[4]);
+      lcd.setCursor(0,3);
+      lcd.print("  Gen H:");
+      lcd.print(relayStates[2]);
+      lcd.print("|     MIC:");
+      lcd.print(relayStates[5]);
       break;
   }
 }
