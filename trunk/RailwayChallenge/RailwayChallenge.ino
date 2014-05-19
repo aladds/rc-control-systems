@@ -107,7 +107,6 @@ void loop() {
       connectionTimeout = true;
     }
     
-    Serial.println("\nStartUpdate");
     digitalWrite(greenLED, HIGH);
 
     //Thermistor Reading
@@ -120,14 +119,13 @@ void loop() {
     motorTwoSpeed = 1000000/(motorTwoPeriod*7); // this is in Hz
 
     serialUpdate();
-    Serial.println("EndUpdate\n");
     digitalWrite(greenLED, LOW);
   }
   
   //Check USB serial for debug commands
-  while(Serial1.available() > 0)
+  while(Serial.available() > 0)
   {
-    byte byteIn = Serial1.read();
+    byte byteIn = Serial.read();
     if(byteIn == '\n' || byteIn == '\r')
     {
       //do some work
@@ -144,9 +142,9 @@ void loop() {
   }
   
   //Check Controler serial link for commands
-  while(Serial.available() > 0)
+  while(Serial1.available() > 0)
   {
-    byte byteIn = Serial.read();
+    byte byteIn = Serial1.read();
     if(byteIn == '\n' || byteIn == '\r')
     {
       //flash red LED to indicate serial coms
