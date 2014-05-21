@@ -77,8 +77,6 @@ void setup() {
   Serial.begin(19200);
   Serial1.begin(19200);
   
-  Serial1.println("Serial 1");
-  
   //Request Controler state
   Serial.println("Requesting Config from Controller");
   delay(500);
@@ -87,6 +85,10 @@ void setup() {
   if(Serial1.available() < 1)
   {
     Serial.println("Controler disconnected");
+  }
+  else
+  {
+    Serial.println("Controler Connected");
   }
   Serial.println(trainPrep());
   Serial.println("Debug Mode");
@@ -163,6 +165,7 @@ void loop() {
   if(connectionLost)
   {
     //Stop The Train
+    Serial.println("Connection lost");
     Inverters.setSpeed(0);
     Serial1.println("Q0");
     connectionLost = false;
@@ -195,13 +198,12 @@ void serialUpdate()
 //Comands from the hand held controler
 void controlerCommand(byte serialIndex)
 {
+  connectionTimeout = false;
+    connectionLost = false;
   //Do Some Work
   for(int s = 0; s < serialIndex; s++)
   {
 
-    connectionTimeout = false;
-    connectionLost = false;
-    
     //checksum
     if(s + 2 < serialIndex && controlBuffer[s+1] == controlBuffer[s+2])
     {
@@ -234,9 +236,14 @@ void controlerCommand(byte serialIndex)
           s += 2;
           break;
         case 'W': //Whistle
+          Serial.println("Whistle");
           if(commandState(controlBuffer[s+1]))
           {
-            togglePin(30);
+            digitalWrite(30, HIGH);
+          }
+          else
+          {
+            digitalWrite(30, LOW);
           }
           s += 2;
           break;
@@ -244,6 +251,11 @@ void controlerCommand(byte serialIndex)
           if(commandState(controlBuffer[s+1]))
           {
             //charge regen
+            digitalWrite(22, HIGH);
+          }
+          else
+          {
+            digitalWrite(22, LOW);
           }
           s += 2;
           break;
@@ -251,6 +263,12 @@ void controlerCommand(byte serialIndex)
           if(!commandState(controlBuffer[s+1]))
           {
             //Drive Regen
+            digitalWrite(23, HIGH);
+          }
+          else
+          {
+            digitalWrite(23, LOW);
+          
           }
           s += 2;
           break;

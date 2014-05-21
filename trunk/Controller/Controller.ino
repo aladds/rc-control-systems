@@ -4,9 +4,13 @@
 LiquidCrystal lcd(22,23,24,25,26,27,28,29,30,31,32); 
 
 //Input array
-String inputs[]  = {"F/R","RegenEnable","GenToggle","Faster","Slower","RegenDrive","RegenCharge","Whistle"};
-byte inputPinOffset = 38;
-byte inputCount = 8;
+const byte slow = 33;
+const byte fast = 34;
+const byte gen = 40;
+const byte fb = 41;
+const byte charge = 42;
+const byte drive = 43;
+const byte whistle = 45;
 
 //Serial Buffer
 byte controlBuffer[128];
@@ -26,7 +30,7 @@ byte temp2 = 0;
 float spd1 = 0;
 float spd2 = 0;
 byte currentSpeed = 0;
-byte currentScreen = 0; //0 is main screen
+byte currentScreen = 0; //1 is main screen
 bool speedHold = false;
 
 byte con = 64;
@@ -34,11 +38,11 @@ byte con = 64;
 const byte serialTrue = 170;
 const byte serialFalse = 85;//85
 const byte numberOfScreens = 4;
-const unsigned long screenRefreshTime = 1000;
+const unsigned long screenRefreshTime = 250;
 const byte fasterPin = 33;
 const byte slowerPin = 34;
 
-bool updateScreen[numberOfScreens];
+bool updateScreen[numberOfScreens] = {true, false, false, false};
 
 byte smiley[8] = {
   B00000,
@@ -84,6 +88,15 @@ void setup() {
   
   Serial.println(true);
   
+  pinMode(slow, INPUT_PULLUP);
+  pinMode(fast, INPUT_PULLUP);
+  pinMode(gen, INPUT_PULLUP);
+  pinMode(fb, INPUT_PULLUP);
+  pinMode(charge, INPUT_PULLUP);
+  pinMode(drive, INPUT_PULLUP);
+  pinMode(whistle, INPUT_PULLUP);
+  
+  
   //intialse LCD
   lcd.begin(20,4);
   lcd.createChar(0, smiley);
@@ -94,7 +107,7 @@ void setup() {
   lcd.setCursor(0,1);
   lcd.print("Connecting");
   unsigned int dotCount = 0;
-  while(Serial.available() < 1)
+  while(Serial1.available() < 1)
   {
     if(dotCount == 60000)
     {
@@ -114,12 +127,7 @@ void setup() {
     else
       lcd.write(byte(2));
   }
-  
-  //setup pins NOTE: some of these may have to be moved to interupts
-  for(int n = inputPinOffset; n < inputCount+inputPinOffset; n++)
-  {
-    pinMode(n, INPUT_PULLUP);
-  }
+
 }
 
 byte serialBoolConverter(bool toConvert)
@@ -137,35 +145,40 @@ unsigned long lastRefreshTime = millis();
 void loop() {
   //analogWrite(11, 250);
   
-  bool curDir = !digitalRead(38);
+  bool curDir = !digitalRead(fb);
   if(curDir != directionState)
   {
+    //toggle
+    delay(20);
     directionState = curDir;
     sendSerialCommand('D', serialBoolConverter(directionState));
   }
   
-  bool curGen = !digitalRead(40);
+  bool curGen = !digitalRead(gen);
   if(curGen != genState)
   {
+    //this is a toggle switch
+    delay(20);
+    Serial.println(genState);
     genState = curGen;
     sendSerialCommand('G', serialBoolConverter(genState));
   }
   
-  bool curRegenDrive = !digitalRead(40);
+  bool curRegenDrive = !digitalRead(drive);
   if(curRegenDrive != regenDriveState)
   {
     regenDriveState = curRegenDrive;
     sendSerialCommand('Z', serialBoolConverter(regenDriveState));
   }
   
-  bool curRegenChargeState = !digitalRead(40);
+  bool curRegenChargeState = !digitalRead(charge);
   if(curRegenChargeState != regenChargeState)
   {
     regenChargeState = curRegenChargeState;
     sendSerialCommand('C', serialBoolConverter(regenChargeState));
   }
   
-  bool curWhistleState = !digitalRead(40);
+  bool curWhistleState = !digitalRead(whistle);
   if(curWhistleState != whistleState)
   {
     whistleState = curWhistleState;
@@ -173,10 +186,10 @@ void loop() {
   }
   
 
-  if(speedHold == false && (!digitalRead(fasterPin) || !digitalRead(slowerPin)))
+  if(speedHold == false && (!digitalRead(fast) || !digitalRead(slow)))
   {
     speedHold = true;
-    if(!digitalRead(fasterPin))
+    if(!digitalRead(fast))
     {
       if(currentSpeed < 4)
       {
@@ -184,7 +197,7 @@ void loop() {
       }
       sendSerialCommand('S', currentSpeed);
     }
-    else if(!digitalRead(slowerPin))
+    else if(!digitalRead(slow))
     {
       if(currentSpeed > 0)
       {
@@ -193,15 +206,15 @@ void loop() {
       sendSerialCommand('S', currentSpeed);
     }
   }
-  else if(digitalRead(slowerPin) && digitalRead(fasterPin))
+  else if(digitalRead(slow) && digitalRead(fast))
   {
     speedHold = false;
   }
   
   //Check for serial data from train
-  while(Serial.available() > 0)
+  while(Serial1.available() > 0)
   {
-    byte byteIn = Serial.read();
+    byte byteIn = Serial1.read();
     if(byteIn == '\n')
     {
       controlerCommand(controlIndex);
@@ -219,7 +232,6 @@ void loop() {
     lastRefreshTime = millis();
     sendSerialCommand('Q', 0);
     updateLCD();
-    Serial.println("UPDATE LCD");
   }
 }
 
@@ -246,6 +258,7 @@ void controlerCommand(byte serialIndex)
         Serial1.write(serialBoolConverter(genState));
         Serial1.write(serialBoolConverter(genState));
         Serial1.write('\n');
+        currentScreen = 0;
         s += 1;
         break;
       case 'T': //Therm1
