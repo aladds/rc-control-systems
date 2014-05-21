@@ -11,6 +11,8 @@ const byte fb = 41;
 const byte charge = 42;
 const byte drive = 43;
 const byte whistle = 45;
+const byte screenBack = 46;
+const byte screenForward = 47;
 
 //Serial Buffer
 byte controlBuffer[128];
@@ -22,6 +24,8 @@ bool directionState = false;
 bool regenChargeState = false;
 bool regenDriveState = false;
 bool whistleState = false;
+bool nextScreenState = false;
+bool prevScreenState = false;
 bool relayStates[6] = {false, false, false, false, false, false};
 
 //Variables
@@ -39,8 +43,7 @@ const byte serialTrue = 170;
 const byte serialFalse = 85;//85
 const byte numberOfScreens = 4;
 const unsigned long screenRefreshTime = 250;
-const byte fasterPin = 33;
-const byte slowerPin = 34;
+const float gearRatio = 0.23;
 
 bool updateScreen[numberOfScreens] = {true, false, false, false};
 
@@ -55,25 +58,25 @@ byte smiley[8] = {
 };
 
 byte roundelLeft[8] = {
-	B00000,
-	B00011,
-	B00110,
-	B01100,
-	B11111,
-	B01100,
-	B00110,
-	B00011
+  B00000,
+  B00011,
+  B00110,
+  B01100,
+  B11111,
+  B01100,
+  B00110,
+  B00011
 };
 
 byte roundelRight[8] = {
-	B00000,
-	B11000,
-	B01100,
-	B00110,
-	B11111,
-	B00110,
-	B01100,
-	B11000
+  B00000,
+  B11000,
+  B01100,
+  B00110,
+  B11111,
+  B00110,
+  B01100,
+  B11000
 };
 
 void setup() {
@@ -169,6 +172,8 @@ void loop() {
   {
     regenDriveState = curRegenDrive;
     sendSerialCommand('Z', serialBoolConverter(regenDriveState));
+    updateScreen[1] = true;
+    currentScreen = 1;
   }
   
   bool curRegenChargeState = !digitalRead(charge);
@@ -176,6 +181,8 @@ void loop() {
   {
     regenChargeState = curRegenChargeState;
     sendSerialCommand('C', serialBoolConverter(regenChargeState));
+    updateScreen[1] = true;
+    currentScreen = 1;
   }
   
   bool curWhistleState = !digitalRead(whistle);
@@ -183,6 +190,28 @@ void loop() {
   {
     whistleState = curWhistleState;
     sendSerialCommand('W', serialBoolConverter(whistleState));
+  }
+  
+  bool curNextScreenState = !digitalRead(screenForward);
+  if(curNextScreenState != nextScreenState)
+  {
+    nextScreenState = curNextScreenState;
+    if(currentScreen < 3)
+    {
+      currentScreen++;
+      updateScreen[currentScreen] = true;
+    }
+  }
+  
+  bool curPrevScreenState = !digitalRead(screenBack);
+  if(curPrevScreenState != prevScreenState)
+  {
+    prevScreenState = curPrevScreenState;
+    if(currentScreen > 0)
+    {
+      currentScreen--;
+      updateScreen[currentScreen] = true;
+    }
   }
   
 
@@ -277,16 +306,19 @@ void controlerCommand(byte serialIndex)
       case 'V': //spd1
         Serial.println("spd1");
         //Convert from Hz to KPH
+        spd1 = controlBuffer[s+1] * gearRatio;
         updateScreen[0] = true;
         updateScreen[1] = true;
         s += 1;
         break;
       case 'B': //spd2
         Serial.println("spd2");
+        spd2 = controlBuffer[s+1] * gearRatio;
+        updateScreen[0] = true;
+        updateScreen[1] = true;
         s += 1;
         break;
       case 'R': //Relay States
-        
         byte states = controlBuffer[s+1];
         Serial.print("RelayStates ");
         for(int k = 0; k < 6; k++)
@@ -294,11 +326,14 @@ void controlerCommand(byte serialIndex)
           relayStates[k] = (states >> k) & B00000001;
           Serial.print(relayStates[k], BIN);
         }
-        Serial.print("\n");
-        
+        Serial.print("\n");     
         updateScreen[2] = true;
         s += 1;
         break;
+      case 'M':
+        updateScreen[3] = true;
+        currentScreen = 3;
+        
     }    
   }
 }
@@ -324,7 +359,7 @@ void updateLCD()
   }
   
   lcd.clear();
-  lcd.print(currentScreen);
+  lcd.print(currentScreen+1);
   lcd.print("/");
   lcd.print(numberOfScreens);
   
@@ -337,12 +372,19 @@ void updateLCD()
       lcd.print(currentSpeed);
       lcd.print("kph");
       lcd.setCursor(0,2);
-      lcd.print("Current Speed: ");
+      lcd.print("Drive Speed: ");
       lcd.print(spd1, 2);
       lcd.print("kph");
       lcd.setCursor(0,3);
       lcd.print("Resistor Temp: ");
-      lcd.print(temp2, 3);
+      if(temp1 > temp2)
+      {
+        lcd.print(temp1, 3);
+      }
+      else
+      {
+        lcd.print(temp2, 3);
+      }
       lcd.print("C");
       break;
     case 1://Regen screen
@@ -378,5 +420,7 @@ void updateLCD()
       lcd.print("|     MIC:");
       lcd.print(relayStates[5]);
       break;
+    case 3://Warning Screen
+      lcd.print(" Warning Messages");
   }
 }
