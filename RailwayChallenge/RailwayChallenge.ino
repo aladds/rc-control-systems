@@ -10,7 +10,7 @@ const byte thermistorTwo = 1;
 const byte greenLED = 42;
 const byte redLED = 43;
 const int relayDelay = 200;
-const unsigned long updateTime = 1777;
+const unsigned long updateTime = 1777;//ms
 
 //input relays
 const byte RT = 47;
@@ -31,8 +31,9 @@ bool connectionTimeout = false; // for connection timeout
 InverterController Inverters(36, 37, 38, 39, 40, 41);
 
 //Thermistors
-int thermistorOneReading;
-int thermistorTwoReading;
+const float voltRes = (204.8*3.8)/200;//(steps per volt x max voltage in) / range
+float thermistorOneReading;
+float thermistorTwoReading;
 
 //hall effect sensors, default 20,000 ~= 4m/s
 unsigned long motorOnePeriod = 2857;
@@ -112,8 +113,8 @@ void loop() {
     digitalWrite(greenLED, HIGH);
 
     //Thermistor Reading
-    thermistorOneReading = analogRead(thermistorOne)/2.56;
-    thermistorTwoReading = analogRead(thermistorTwo)/2.56;
+    thermistorOneReading = analogRead(thermistorOne) / voltRes;
+    thermistorTwoReading = analogRead(thermistorTwo) / voltRes;
     
     //Speed Reading
     // 1Hz speed is 142857us period
@@ -174,10 +175,13 @@ void loop() {
 
 void serialUpdate()
 {
+  //Thermistor readings must be converted to byte values
+  byte thrm1 = round(thermistorOneReading);
+  byte thrm2 = round(thermistorTwoReading);
   Serial1.write('T');
-  Serial1.write(thermistorOneReading);
+  Serial1.write(thrm1);
   Serial1.write('Y');
-  Serial1.write(thermistorTwoReading);
+  Serial1.write(thrm2);
   Serial1.write('V');
   Serial1.write(motorOneSpeed);
   Serial1.write('B');
@@ -268,7 +272,6 @@ void controlerCommand(byte serialIndex)
           else
           {
             digitalWrite(23, LOW);
-          
           }
           s += 2;
           break;
@@ -418,12 +421,14 @@ void motorOneSpeedInterupt()
 {
   motorOnePeriod = micros() - motorOneLastTick;
   motorOneLastTick = micros();
+  Serial.println("Motor1 int");
 }
 
 void motorTwoSpeedInterupt()
 {
   motorTwoPeriod = micros() - motorTwoLastTick;
   motorTwoLastTick = micros();
+  Serial.println("Motor2 int");
 }
 
 String trainPrep()
@@ -584,13 +589,7 @@ void stopGenorator()
 
 void flick()
 {
-  for(int n = pinOffset; n < pinCount+pinOffset; n++)
-  {
-    togglePin(n);
-    delay(relayDelay);
-    togglePin(n);
-    delay(relayDelay);
-  }
+  Serial.println("Disabled");
 }
 
 int getPinNumber(String pinName)
