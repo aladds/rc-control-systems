@@ -1,4 +1,4 @@
-#include "InverterController.h"
+#include <InverterController.h>
 
 //Program storage space variables
 const String pinMap[] = {"R-RGC","R-RGD","R-GER1","R-GER2","R-GES","R-LTF","R-LTR","Z-BR-PLC","R-WHS","R-CSRT","R-FSH","R-CSSB","R-MIE","R-CEN","STF","STR","RM1","RH1","RM2","RH2","LEDG","LEDR"};
@@ -9,6 +9,9 @@ const byte thermistorOne = 0;
 const byte thermistorTwo = 1;
 const byte greenLED = 42;
 const byte redLED = 43;
+const byte lightsForward = 27;
+const byte lightsBackward = 28;
+const byte inverterPower = 34;
 const int relayDelay = 200;
 const unsigned long updateTime = 1777;//ms
 
@@ -28,6 +31,7 @@ byte bufferIndex = 0;
 byte controlIndex = 0;
 bool connectionLost = true; //WIll stop train and request config
 bool connectionTimeout = false; // for connection timeout
+int currentSpeed = 0;
 InverterController Inverters(36, 37, 38, 39, 40, 41);
 
 //Thermistors
@@ -81,7 +85,9 @@ void setup() {
   //Request Controler state
   Serial.println("Requesting Config from Controller");
   delay(500);
-  Serial1.println("Q0");
+  Serial1.write('Q');
+  Serial1.write(0);
+  Serial1.write('\n');
   delay(500);
   if(Serial1.available() < 1)
   {
@@ -91,7 +97,7 @@ void setup() {
   {
     Serial.println("Controler Connected");
   }
-  Serial.println(trainPrep());
+  //Serial.println(trainPrep());
   Serial.println("Debug Mode");
 }
 //byte serialIndex = Serial.readBytesUntil(termChar, serialBuffer, serialBufferLength); 
@@ -120,8 +126,10 @@ void loop() {
     // 1Hz speed is 142857us period
     motorOneSpeed = 1000000/(motorOnePeriod*7); // this is in Hz
     motorTwoSpeed = 1000000/(motorTwoPeriod*7); // this is in Hz
-
-    serialUpdate();
+    if(!connectionLost)
+    {
+      serialUpdate();
+    }
     digitalWrite(greenLED, LOW);
   }
   
@@ -168,7 +176,9 @@ void loop() {
     //Stop The Train
     Serial.println("Connection lost");
     Inverters.setSpeed(0);
-    Serial1.println("Q0");
+    Serial1.write('Q');
+    Serial1.write(0);
+    Serial1.write('\n');
     connectionLost = false;
   }
 }
@@ -192,18 +202,20 @@ void serialUpdate()
   for(byte b = 0; b < MIC - RT; b++)
   {
     states |= (digitalRead(RT+b) << b);
+    Serial.println((digitalRead(RT+b) << b), BIN);
   }
+  Serial.println(states, BIN);
+  Serial1.write('S');
+  Serial1.write(currentSpeed);
   Serial1.write(states);
   Serial1.write('\n');
 }
 
-
-
 //Comands from the hand held controler
 void controlerCommand(byte serialIndex)
 {
+  //The 'U' command will get this far
   connectionTimeout = false;
-    connectionLost = false;
   //Do Some Work
   for(int s = 0; s < serialIndex; s++)
   {
@@ -211,9 +223,12 @@ void controlerCommand(byte serialIndex)
     //checksum
     if(s + 2 < serialIndex && controlBuffer[s+1] == controlBuffer[s+2])
     {
+      //Only a valid command can revive from conection lost.
+      connectionLost = false;
       switch (controlBuffer[s])
       {
         case 'S': //Speed
+          currentSpeed = controlBuffer[s+1];
           Inverters.setSpeed(controlBuffer[s+1]);
           s += 2;
           break;
@@ -221,10 +236,14 @@ void controlerCommand(byte serialIndex)
           if(commandState(controlBuffer[s+1]))
           {
             Inverters.driveForward();
+            digitalWrite(lightsForward, HIGH);
+            digitalWrite(lightsBackward, LOW);
           }
           else
           {
             Inverters.driveReverse();
+            digitalWrite(lightsForward, LOW);
+            digitalWrite(lightsBackward, HIGH);
           }
           s += 2;
           break;
@@ -506,8 +525,7 @@ String trainPrep()
   {
     digitalWrite(redLED, HIGH);
     digitalWrite(greenLED, LOW); 
-  }
-  
+  }  
   return returnString;
 }
 
@@ -578,11 +596,15 @@ bool startGenorator()
     }
   }
   digitalWrite(26, LOW);
+  delay(1000);
+  digitalWrite(inverterPower, HIGH);
   return true;
 }
 
 void stopGenorator()
 {
+  digitalWrite(inverterPower, LOW);
+  delay(1000);
   digitalWrite(24, LOW);
   digitalWrite(25, LOW);
 }
