@@ -34,8 +34,10 @@ byte temp2 = 0;
 float spd1 = 0;
 float spd2 = 0;
 byte currentSpeed = 0;
-byte currentScreen = 0; //1 is main screen
+byte currentScreen = 3; //0 is main screen
 bool speedHold = false;
+String line1Warning = "Connecting...";
+bool serialLinkUp = false;
 
 byte con = 64;
 
@@ -98,7 +100,8 @@ void setup() {
   pinMode(charge, INPUT_PULLUP);
   pinMode(drive, INPUT_PULLUP);
   pinMode(whistle, INPUT_PULLUP);
-  
+  pinMode(screenBack, INPUT_PULLUP);
+  pinMode(screenForward, INPUT_PULLUP);
   
   //intialse LCD
   lcd.begin(20,4);
@@ -110,18 +113,6 @@ void setup() {
   lcd.setCursor(0,1);
   lcd.print("Connecting");
   unsigned int dotCount = 0;
-  while(Serial1.available() < 1)
-  {
-    if(dotCount == 60000)
-    {
-      lcd.print(".");
-      dotCount = 0;
-    }
-    else
-    {
-      dotCount++;
-    }
-  }
   lcd.setCursor(0,2);
   for(int p = 0; p < 40; p++)
   {
@@ -130,7 +121,7 @@ void setup() {
     else
       lcd.write(byte(2));
   }
-
+  delay(200);//to show of roundels
 }
 
 byte serialBoolConverter(bool toConvert)
@@ -145,6 +136,8 @@ byte serialBoolConverter(bool toConvert)
   }
 }
 unsigned long lastRefreshTime = millis();
+const unsigned long debounce = 20;
+unsigned long debounceTime = millis();
 void loop() {
   //analogWrite(11, 250);
   
@@ -193,32 +186,42 @@ void loop() {
   }
   
   bool curNextScreenState = !digitalRead(screenForward);
-  if(curNextScreenState != nextScreenState)
+  if(curNextScreenState != nextScreenState  && (debounceTime + debounce) < millis())
   {
+    debounceTime = millis();
     nextScreenState = curNextScreenState;
-    if(currentScreen < 3)
+    if(currentScreen < 3 && !digitalRead(screenForward))
     {
+      Serial.println("Forward Screen");
       currentScreen++;
       updateScreen[currentScreen] = true;
     }
   }
   
   bool curPrevScreenState = !digitalRead(screenBack);
-  if(curPrevScreenState != prevScreenState)
+  if(curPrevScreenState != prevScreenState && debounceTime + debounce < millis())
   {
+    debounceTime = millis();
     prevScreenState = curPrevScreenState;
-    if(currentScreen > 0)
+    if(currentScreen > 0 && !digitalRead(screenBack))
     {
+      Serial.println("Back screen");
       currentScreen--;
       updateScreen[currentScreen] = true;
     }
   }
-  
 
   if(speedHold == false && (!digitalRead(fast) || !digitalRead(slow)))
   {
     speedHold = true;
-    if(!digitalRead(fast))
+    if(!digitalRead(fast) && !digitalRead(slow))
+    {
+      //Stop regen mode
+      currentScreen = 0;
+      updateScreen[0] = true;
+      currentSpeed = 0;
+    }
+    else if(!digitalRead(fast))
     {
       if(currentSpeed < 4)
       {
@@ -234,6 +237,7 @@ void loop() {
       }
       sendSerialCommand('S', currentSpeed);
     }
+    
   }
   else if(digitalRead(slow) && digitalRead(fast))
   {
@@ -259,11 +263,11 @@ void loop() {
   if(millis() >= screenRefreshTime + lastRefreshTime)
   {
     lastRefreshTime = millis();
-    sendSerialCommand('Q', 0);
+    sendSerialCommand('U', 0);
     updateLCD();
   }
 }
-
+bool activtyToggle = false;
 void controlerCommand(byte serialIndex)
 {
   //Do Some Work
@@ -272,13 +276,26 @@ void controlerCommand(byte serialIndex)
     return;
   }
   
+  lcd.setCursor(19,0);
+  if(activtyToggle)
+  {
+    lcd.print("A");
+    
+  }
+  else
+  {
+    lcd.print("B");
+  }
+  activtyToggle = !activtyToggle;
+  
   for(int s = 0; s < serialIndex; s++)
   {
     //checksum
     switch (controlBuffer[s])
-    {
+    { 
       case 'Q': //Start
         //The Gen and Dir states must be sent as they are toggle switches
+        serialLinkUp = true;
         Serial.println("Start");
         Serial1.write('D');
         Serial1.write(serialBoolConverter(directionState));
@@ -318,6 +335,15 @@ void controlerCommand(byte serialIndex)
         updateScreen[1] = true;
         s += 1;
         break;
+      case 'M':
+        updateScreen[3] = true;
+        currentScreen = 3;
+        s+= 1;
+        break;
+      case 'S':
+        currentSpeed = controlBuffer[s+1];
+        s+=1
+        break;
       case 'R': //Relay States
         byte states = controlBuffer[s+1];
         Serial.print("RelayStates ");
@@ -330,28 +356,33 @@ void controlerCommand(byte serialIndex)
         updateScreen[2] = true;
         s += 1;
         break;
-      case 'M':
-        updateScreen[3] = true;
-        currentScreen = 3;
-        
+      
     }    
   }
 }
 
 void sendSerialCommand(char type, byte value)
 {
-  Serial1.write(type);
-  Serial1.write(value);
-  Serial1.write(value);
-  Serial1.write('\n');
+  if(serialLinkUp)
+  {
+    Serial1.write(type);
+    Serial1.write(value);
+    Serial1.write(value);
+    Serial1.write('\n');
+  }
 }
 
 //LCD Functions
 void updateLCD()
 {
+  if(currentScreen > 3)
+  {
+    //currentScreen = 0;
+  }
+  
   if(!updateScreen[currentScreen])
   {
-    return;
+    //return;
   }
   else
   {
@@ -373,7 +404,7 @@ void updateLCD()
       lcd.print("kph");
       lcd.setCursor(0,2);
       lcd.print("Drive Speed: ");
-      lcd.print(spd1, 2);
+      lcd.print(spd1, 0);
       lcd.print("kph");
       lcd.setCursor(0,3);
       lcd.print("Resistor Temp: ");
@@ -383,7 +414,7 @@ void updateLCD()
       }
       else
       {
-        lcd.print(temp2, 3);
+        lcd.print(temp1, 3);//SHOULD BE TEMP2!
       }
       lcd.print("C");
       break;
@@ -399,7 +430,7 @@ void updateLCD()
         lcd.print("IDLE");
       lcd.setCursor(0,2);
       lcd.print("Current Speed: ");
-      lcd.print(spd1, 2);
+      lcd.print(spd1, 0);
       lcd.print("kph");
       break;
     case 2://Relay states
@@ -422,5 +453,8 @@ void updateLCD()
       break;
     case 3://Warning Screen
       lcd.print(" Warning Messages");
+      lcd.setCursor(0,1);
+      lcd.print(line1Warning);
+      break;
   }
 }

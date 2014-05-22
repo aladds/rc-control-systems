@@ -11,6 +11,7 @@ public:
 	void driveReverse();
 	void coast();
 	void setSpeed(int speed);
+    int getSpeed();
 };
 
 #endif

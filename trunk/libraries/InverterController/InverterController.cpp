@@ -7,7 +7,8 @@ byte backwardPin;
 byte midPinInv1;
 byte highPinInv1;
 byte midPinInv2;
-byte highPinInv2; 
+byte highPinInv2;
+int currentSpeed
 
 InverterController::InverterController(byte lforwardPin, byte lbackwardPin, byte lmidPinInv1, byte lhighPinInv1, byte lmidPinInv2, byte lhighPinInv2)
 {
@@ -41,6 +42,7 @@ void InverterController::coast()
 
 void InverterController::setSpeed(int speed)
 {
+    currentSpeed = speed;
 	if(speed == 0)
 	{
 		coast();
@@ -77,4 +79,9 @@ void InverterController::setSpeed(int speed)
 	{
 		coast();
 	}
+}
+
+int InverterController::getSpeed()
+{
+    return speed;
 }
