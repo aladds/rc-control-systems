@@ -38,6 +38,7 @@ byte currentScreen = 3; //0 is main screen
 bool speedHold = false;
 String line1Warning = "Connecting...";
 bool serialLinkUp = false;
+char serialTest = 'A';
 
 byte con = 64;
 
@@ -279,12 +280,12 @@ void controlerCommand(byte serialIndex)
   lcd.setCursor(19,0);
   if(activtyToggle)
   {
-    lcd.print("A");
+    serialTest = 'A';
     
   }
   else
   {
-    lcd.print("B");
+    serialTest = 'B';
   }
   activtyToggle = !activtyToggle;
   
@@ -342,7 +343,7 @@ void controlerCommand(byte serialIndex)
         break;
       case 'S':
         currentSpeed = controlBuffer[s+1];
-        s+=1
+        s+=1;
         break;
       case 'R': //Relay States
         byte states = controlBuffer[s+1];
@@ -390,6 +391,9 @@ void updateLCD()
   }
   
   lcd.clear();
+  lcd.setCursor(19,0);
+  lcd.print(serialTest);
+  lcd.home();
   lcd.print(currentScreen+1);
   lcd.print("/");
   lcd.print(numberOfScreens);
