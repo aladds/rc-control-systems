@@ -1,9 +1,9 @@
 #include <InverterController.h>
 
-//Program storage space variables
-const String pinMap[] = {"R-RGC","R-RGD","R-GER1","R-GER2","R-GES","R-LTF","R-LTR","Z-BR-PLC","R-WHS","R-CSRT","R-FSH","R-CSSB","R-MIE","R-CEN","STF","STR","RM1","RH1","RM2","RH2","LEDG","LEDR"};
-const byte pinCount = 22;//This is the length of pinMap
-const byte pinOffset = 22;
+//Program storage space     22     23      24        25       26     27      28       29        30       31      32      33        34     35     36    37    38    39    40    41    42     43     44   45
+const String pinMap[] = {"R-RGC","R-RGD","R-GER1","R-GER2","R-GES","R-LTF","R-LTR","Z-BR-PLC","R-WHS","R-CSRT","R-FSH","R-CSSB","R-MIE","R-CEN","STF","STR","RM1","RH1","RM2","RH2","LEDG","LEDR","NC","REN"};
+const byte pinCount = 24;//This is the length of pinMap
+const byte pinOffset = 22;// pins 22 - 43 and 45 pins used
 const byte serialBufferLength = 128;
 const byte thermistorOne = 0;
 const byte thermistorTwo = 1;
@@ -23,6 +23,12 @@ const byte GH = 50;
 const byte COMC = 51;
 const byte MIC = 52;
 //53 is connected and spare
+
+//Common pins
+const byte REN = 45;
+const byte RRTC = 31;
+const byte FIRE = 32;
+const byte RSBC = 33;
 
 //Dynamic memory variables
 byte serialBuffer[serialBufferLength];
@@ -59,7 +65,7 @@ void setup() {
   for(int n = 0; n < pinCount; n++)
   {
     pinMode(n+pinOffset, OUTPUT);
-    digitalWrite(n+22, LOW);
+    digitalWrite(n+pinOffset, LOW);
   }
   
   //setup input pins
@@ -96,6 +102,13 @@ void setup() {
   else
   {
     Serial.println("Controler Connected");
+    //Enable SBC and round train as we have a controler anyway
+    digitalWrite(RSBC, HIGH);
+    digitalWrite(RRTC, HIGH);
+    //We are probs not on fire 
+    digitalWrite(FIRE, HIGH);
+    //and some break resistors wouldnt go a miss
+    digitalWrite(REN, HIGH);
   }
   //Serial.println(trainPrep());
   Serial.println("Debug Mode");
@@ -202,9 +215,9 @@ void serialUpdate()
   for(byte b = 0; b < MIC - RT; b++)
   {
     states |= (digitalRead(RT+b) << b);
-    Serial.println((digitalRead(RT+b) << b), BIN);
+    //Serial.println((digitalRead(RT+b) << b), BIN);
   }
-  Serial.println(states, BIN);
+  //Serial.println(states, BIN);
   Serial1.write('S');
   Serial1.write(currentSpeed);
   Serial1.write(states);
@@ -219,7 +232,11 @@ void controlerCommand(byte serialIndex)
   //Do Some Work
   for(int s = 0; s < serialIndex; s++)
   {
-
+    if(controlBuffer[s] == 'U')
+    {
+      Serial.println("U");
+      return;
+    }
     //checksum
     if(s + 2 < serialIndex && controlBuffer[s+1] == controlBuffer[s+2])
     {
@@ -295,6 +312,10 @@ void controlerCommand(byte serialIndex)
           s += 2;
           break;
       }
+    }
+    else
+    {
+      Serial.println("junk");
     }
   }
 }
