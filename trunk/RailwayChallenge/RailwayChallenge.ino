@@ -1,7 +1,7 @@
 #include <InverterController.h>
 
 //Program storage space     22     23      24        25       26     27      28       29        30       31      32      33        34     35     36    37    38    39    40    41    42     43     44   45
-const String pinMap[] = {"R-RGC","R-RGD","R-GER1","R-GER2","R-GES","R-LTF","R-LTR","Z-BR-PLC","R-WHS","R-CSRT","R-FSH","R-CSSB","R-MIE","R-CEN","STF","STR","RM1","RH1","RM2","RH2","LEDG","LEDR","NC","REN"};
+const String pinMap[] = {"R-RGC","R-RGD","R-GER1","R-GER2","R-GES","R-LTF","R-LTR","Z-BR-PLC","R-WHS","R-CSRT","R-FSH","R-CSSB","R-MIE","R-CEN","RH1","RM2","RH2","FWD","REV","RM1","LEDG","LEDR","NC","REN"};
 const byte pinCount = 24;//This is the length of pinMap
 const byte pinOffset = 22;// pins 22 - 43 and 45 pins used
 const byte serialBufferLength = 128;
@@ -12,6 +12,7 @@ const byte redLED = 43;
 const byte lightsForward = 27;
 const byte lightsBackward = 28;
 const byte inverterPower = 34;
+const byte numberOfMagnets = 1;
 const int relayDelay = 200;
 const unsigned long updateTime = 1777;//ms
 
@@ -29,6 +30,7 @@ const byte REN = 45;
 const byte RRTC = 31;
 const byte FIRE = 32;
 const byte RSBC = 33;
+const byte RCEN = 35;
 
 //Dynamic memory variables
 byte serialBuffer[serialBufferLength];
@@ -38,7 +40,8 @@ byte controlIndex = 0;
 bool connectionLost = true; //WIll stop train and request config
 bool connectionTimeout = false; // for connection timeout
 int currentSpeed = 0;
-InverterController Inverters(36, 37, 38, 39, 40, 41);
+//Yes these pins are odd, I have a photo though
+InverterController Inverters(39, 40, 41, 36, 37, 38);
 
 //Thermistors
 const float voltRes = (204.8*3.8)/200;//(steps per volt x max voltage in) / range
@@ -69,7 +72,7 @@ void setup() {
   }
   
   //setup input pins
-  for(int n = 47; n < 53; n++)
+  for(int n = 47; n < 54; n++)
   {
     pinMode(n, INPUT_PULLUP);
   }
@@ -98,6 +101,7 @@ void setup() {
   if(Serial1.available() < 1)
   {
     Serial.println("Controler disconnected");
+    digitalWrite(FIRE, HIGH);
   }
   else
   {
@@ -108,14 +112,26 @@ void setup() {
     //We are probs not on fire 
     digitalWrite(FIRE, HIGH);
     //and some break resistors wouldnt go a miss
-    digitalWrite(REN, HIGH);
+    //digitalWrite(REN, HIGH);
+    //also i would like the compressor
+    digitalWrite(RCEN, HIGH);
+    
+    digitalWrite(redLED, LOW);
   }
   //Serial.println(trainPrep());
   Serial.println("Debug Mode");
+  digitalWrite(45, HIGH);
 }
 //byte serialIndex = Serial.readBytesUntil(termChar, serialBuffer, serialBufferLength); 
 unsigned long lastUpdateTime = millis();
 void loop() {
+  
+  if(currentSpeed == 0 && motorOneSpeed < 2)//less than 2 Hz
+  {
+     //Instruct inverters to coast
+     //bring in the air brakes
+  }
+  
   if(millis() >= updateTime + lastUpdateTime)
   {
     lastUpdateTime = millis();
@@ -123,10 +139,12 @@ void loop() {
     if(connectionTimeout == true)
     {
       connectionLost = true;
+      Serial.println("Connection Lost");
     }
     else
     {
       connectionTimeout = true;
+      Serial.println("Connected");
     }
     
     digitalWrite(greenLED, HIGH);
@@ -137,8 +155,8 @@ void loop() {
     
     //Speed Reading
     // 1Hz speed is 142857us period
-    motorOneSpeed = 1000000/(motorOnePeriod*7); // this is in Hz
-    motorTwoSpeed = 1000000/(motorTwoPeriod*7); // this is in Hz
+    motorOneSpeed = 1000000/(motorOnePeriod*numberOfMagnets); // this is in Hz
+    motorTwoSpeed = 1000000/(motorTwoPeriod*numberOfMagnets); // this is in Hz
     if(!connectionLost)
     {
       serialUpdate();
@@ -186,13 +204,15 @@ void loop() {
   
   if(connectionLost)
   {
+    digitalWrite(redLED, HIGH);
     //Stop The Train
-    Serial.println("Connection lost");
-    Inverters.setSpeed(0);
+    //Serial.println("Connection lost");
+    digitalWrite(RSBC, LOW); // kill the saftey brake circuit
+    //Inverters.setSpeed(0);
     Serial1.write('Q');
     Serial1.write(0);
     Serial1.write('\n');
-    connectionLost = false;
+    //connectionLost = false; Disabled may break the reconnect!
   }
 }
 
@@ -234,13 +254,28 @@ void controlerCommand(byte serialIndex)
   {
     if(controlBuffer[s] == 'U')
     {
-      Serial.println("U");
+      //Serial.println("U");
       return;
     }
     //checksum
     if(s + 2 < serialIndex && controlBuffer[s+1] == controlBuffer[s+2])
     {
       //Only a valid command can revive from conection lost.
+      if(connectionLost == true)
+      {
+        Serial.println("Controler Connected");
+        //Enable SBC and round train as we have a controler anyway
+        digitalWrite(RSBC, HIGH);
+        digitalWrite(RRTC, HIGH);
+        //We are probs not on fire 
+        digitalWrite(FIRE, HIGH);
+        //and some break resistors wouldnt go a miss
+        //digitalWrite(REN, HIGH);
+        //also i would like the compressor
+        digitalWrite(RCEN, HIGH);
+        
+        digitalWrite(redLED, LOW);
+      }
       connectionLost = false;
       switch (controlBuffer[s])
       {
@@ -600,25 +635,26 @@ void processSerialCommand(byte index)
 bool startGenorator()
 {
   unsigned long startTime = millis();
-  digitalWrite(24, HIGH);
+  digitalWrite(24, HIGH); //GER1
   delay(relayDelay);
-  digitalWrite(25, HIGH);
+  digitalWrite(25, HIGH); //GER2
   delay(relayDelay);
-  digitalWrite(26, HIGH);
-  while(digitalRead(GH))
-  {
-    delay(100);
-    if(startTime + 4000 < millis())
-    {
-      digitalWrite(24, LOW);
-      digitalWrite(25, LOW);
-      digitalWrite(26, LOW);
-      return false;
-    }
-  }
+  digitalWrite(26, HIGH); //GES
+//  while(digitalRead(GH))//While not genorator healthy
+//  {
+//    delay(100);
+//    if(startTime + 4000 < millis())
+//    {
+//      digitalWrite(24, LOW);
+//      digitalWrite(25, LOW);
+//      digitalWrite(26, LOW);
+//      return false;
+//    }
+//  }
+  delay(4000);
   digitalWrite(26, LOW);
   delay(1000);
-  digitalWrite(inverterPower, HIGH);
+  digitalWrite(inverterPower, HIGH); //Enable the motor inverters, yay!
   return true;
 }
 
