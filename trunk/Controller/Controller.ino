@@ -1,9 +1,14 @@
+/*
+**This class provides control and comunication for the control handle. It also 
+**provides LCD output and calculates speed and tempreate from recived bytes over serial
+*/
+
 #include <LiquidCrystal.h>
 
 //Setup LCD
 LiquidCrystal lcd(22,23,24,25,26,27,28,29,30,31,32); 
 
-//Input array
+//Constants
 const byte slow = 33;
 const byte fast = 34;
 const byte gen = 40;
@@ -40,16 +45,20 @@ String line1Warning = "Connecting...";
 bool serialLinkUp = false;
 char serialTest = 'A';
 
-byte con = 64;
+//Contrast setting
+const byte con = 64;
 
+//other constants
 const byte serialTrue = 170;
 const byte serialFalse = 85;//85
 const byte numberOfScreens = 4;
 const unsigned long screenRefreshTime = 250;
 const float gearRatio = 0.23;
 
+//this can be used to make screen refresh more effecient. It is currently disabled.
 bool updateScreen[numberOfScreens] = {true, false, false, false};
 
+//Custom LCD chars
 byte smiley[8] = {
   B00000,
   B10001,
@@ -84,16 +93,18 @@ byte roundelRight[8] = {
 
 void setup() {
   
+  //set up PWM pin for LCD contrast
   pinMode(2, OUTPUT);
-  pinMode(11, OUTPUT);
   analogWrite(2, con);
+  
+  //Optinal Buzer
+  pinMode(11, OUTPUT);
   
   //Start up serial link to train
   Serial.begin(19200);
   Serial1.begin(19200);
   
-  Serial.println(true);
-  
+  //Set up input pins
   pinMode(slow, INPUT_PULLUP);
   pinMode(fast, INPUT_PULLUP);
   pinMode(gen, INPUT_PULLUP);
@@ -136,9 +147,12 @@ byte serialBoolConverter(bool toConvert)
     return serialFalse;
   }
 }
+
+//Variables for debounce timing
 unsigned long lastRefreshTime = millis();
 const unsigned long debounce = 20;
 unsigned long debounceTime = millis();
+
 void loop() {
   //analogWrite(11, 250);
   
@@ -268,7 +282,9 @@ void loop() {
     updateLCD();
   }
 }
+
 bool activtyToggle = false;
+
 void controlerCommand(byte serialIndex)
 {
   //Do Some Work
