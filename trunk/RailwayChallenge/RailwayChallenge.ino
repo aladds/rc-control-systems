@@ -1,7 +1,10 @@
 #include <InverterController.h>
 
+
+
+
 //Program storage space     22     23      24        25       26     27      28       29        30       31      32      33        34     35     36    37    38    39    40    41    42     43     44   45
-const String pinMap[] = {"R-RGC","R-RGD","R-GER1","R-GER2","R-GES","R-LTF","R-LTR","Z-BR-PLC","R-WHS","R-CSRT","R-FSH","R-CSSB","R-MIE","R-CEN","RH1","RM2","RH2","FWD","REV","RM1","LEDG","LEDR","NC","REN"};
+const String pinMap[] = {"R-RGC","R-RGD","R-GER1","R-GER2","R-GES","R-LTF","R-LTR","Z-BR-PLC","R-WHS","R-CSRT","R-FSH","R-CSSB","R-MIE","R-CEN","RH1","RM2","RH2","FWD","REV","RM1","LEDG","LEDR","RL","REN"};
 const byte pinCount = 24;//This is the length of pinMap
 const byte pinOffset = 22;// pins 22 - 43 and 45 pins used
 const byte serialBufferLength = 128;
@@ -41,7 +44,7 @@ bool connectionLost = true; //WIll stop train and request config
 bool connectionTimeout = false; // for connection timeout
 int currentSpeed = 0;
 //Yes these pins are odd, I have a photo though
-InverterController Inverters(39, 40, 41, 36, 37, 38);
+InverterController Inverters(44, 39, 40, 41, 36, 37, 38);
 
 //Thermistors
 const float voltRes = (204.8*3.8)/200;//(steps per volt x max voltage in) / range
@@ -49,8 +52,8 @@ float thermistorOneReading;
 float thermistorTwoReading;
 
 //hall effect sensors, default 20,000 ~= 4m/s
-unsigned long motorOnePeriod = 2857;
-unsigned long motorTwoPeriod = 4000;
+unsigned long motorOnePeriod = 0;
+unsigned long motorTwoPeriod = 0;
 unsigned long motorOneLastTick = 0;
 unsigned long motorTwoLastTick = 0;
 //changed from float to byte as hz are only between 0 and 120 anyway
@@ -120,7 +123,6 @@ void setup() {
   }
   //Serial.println(trainPrep());
   Serial.println("Debug Mode");
-  digitalWrite(45, HIGH);
 }
 //byte serialIndex = Serial.readBytesUntil(termChar, serialBuffer, serialBufferLength); 
 unsigned long lastUpdateTime = millis();
@@ -155,8 +157,10 @@ void loop() {
     
     //Speed Reading
     // 1Hz speed is 142857us period
-    motorOneSpeed = 1000000/(motorOnePeriod*numberOfMagnets); // this is in Hz
+    motorOneSpeed = (1000000/(motorOnePeriod*numberOfMagnets))*3.6; // this is in Hz
     motorTwoSpeed = 1000000/(motorTwoPeriod*numberOfMagnets); // this is in Hz
+    
+    Serial.println(motorOneSpeed);
     if(!connectionLost)
     {
       serialUpdate();
@@ -494,16 +498,24 @@ void togglePin(byte pinNumber)
 
 void motorOneSpeedInterupt()
 {
-  motorOnePeriod = micros() - motorOneLastTick;
+  if(micros() - motorOneLastTick > (30000/numberOfMagnets))
+  {
+    motorOnePeriod = micros() - motorOneLastTick;  
+    Serial.print("Motor1 period: ");
+    Serial.println(motorOnePeriod);
+  }
   motorOneLastTick = micros();
-  Serial.println("Motor1 int");
 }
 
 void motorTwoSpeedInterupt()
 {
-  motorTwoPeriod = micros() - motorTwoLastTick;
+  if(micros() - motorTwoLastTick > (30000/numberOfMagnets))
+  {
+    motorTwoPeriod = micros() - motorTwoLastTick;  
+    Serial.print("Motor2 period: ");
+    Serial.println(motorTwoPeriod);
+  }
   motorTwoLastTick = micros();
-  Serial.println("Motor2 int");
 }
 
 String trainPrep()

@@ -6,12 +6,14 @@
 class InverterController
 {
 public:
-	InverterController(byte forwardPin, byte reversePin, byte midPin, byte highPin, byte midPin2, byte highPin2);
+	InverterController(byte lowPin, byte forwardPin, byte reversePin, byte midPin, byte highPin, byte midPin2, byte highPin2);
 	void driveForward();
 	void driveReverse();
 	void coast();
 	void setSpeed(int speed);
     int getSpeed();
+private:
+    void setDirection();
 };
 
 #endif
