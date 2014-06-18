@@ -49,6 +49,7 @@ void InverterController::coast()
 {
 	digitalWrite(backwardPin, HIGH);
 	digitalWrite(forwardPin, HIGH);
+	digitalWrite(brakeRelease, HIGH);
 }
 
 void InverterController::setSpeed(int speed)
@@ -62,10 +63,10 @@ void InverterController::setSpeed(int speed)
 	if(speed == 0)
 	{
         //for the moment pure REOH + DC Injection!
-        digitalWrite(forwardPin, HIGH);
-        digitalWrite(backwardPin, HIGH);
+        //digitalWrite(forwardPin, HIGH);
+        //digitalWrite(backwardPin, HIGH);
         //This section may be replaced with air brakes
-        digitalWrite(lowPin, LOW);
+        digitalWrite(lowPin, HIGH);
 		digitalWrite(midPinInv1, LOW);
 		digitalWrite(highPinInv1, LOW);
 		digitalWrite(midPinInv2, LOW);
@@ -100,11 +101,11 @@ void InverterController::setSpeed(int speed)
             digitalWrite(backwardPin, HIGH);
             digitalWrite(forwardPin, LOW);
         }
-        digitalWrite(lowPin, HIGH);
-		digitalWrite(midPinInv1, LOW);
-		digitalWrite(highPinInv1, LOW);
-		digitalWrite(midPinInv2, LOW);
+        digitalWrite(lowPin, LOW);
+		digitalWrite(midPinInv1, HIGH);
+		digitalWrite(midPinInv2, HIGH);
 		digitalWrite(highPinInv2, LOW);
+        digitalWrite(highPinInv1, LOW);
 	}
 	else if(speed == 2)
 	{
@@ -119,10 +120,10 @@ void InverterController::setSpeed(int speed)
             digitalWrite(forwardPin, LOW);
         }
         digitalWrite(lowPin, LOW);
-		digitalWrite(midPinInv1, HIGH);
-		digitalWrite(midPinInv2, HIGH);
-		digitalWrite(highPinInv2, LOW);
-        digitalWrite(highPinInv1, LOW);
+		digitalWrite(midPinInv1, LOW);
+		digitalWrite(midPinInv2, LOW);
+		digitalWrite(highPinInv2, HIGH);
+        digitalWrite(highPinInv1, HIGH);
 	}
 	else if(speed == 3)
 	{
@@ -136,13 +137,13 @@ void InverterController::setSpeed(int speed)
             digitalWrite(backwardPin, HIGH);
             digitalWrite(forwardPin, LOW);
         }
-        digitalWrite(lowPin, LOW);
-		digitalWrite(midPinInv1, LOW);
-		digitalWrite(midPinInv2, LOW);
-		digitalWrite(highPinInv2, HIGH);
-        digitalWrite(highPinInv1, HIGH);
+        digitalWrite(lowPin, HIGH);
+		digitalWrite(midPinInv1, HIGH);
+		digitalWrite(midPinInv2, HIGH);
+		digitalWrite(highPinInv2, LOW);
+        digitalWrite(highPinInv1, LOW);
 	}
-	else if(speed == 4)
+    else if(speed == 4)
 	{
         if(forwardEnable == true)
         {
@@ -155,10 +156,10 @@ void InverterController::setSpeed(int speed)
             digitalWrite(forwardPin, LOW);
         }
         digitalWrite(lowPin, HIGH);
-		digitalWrite(midPinInv1, HIGH);
-		digitalWrite(midPinInv2, HIGH);
-		digitalWrite(highPinInv2, LOW);
-        digitalWrite(highPinInv1, LOW);
+		digitalWrite(midPinInv1, LOW);
+		digitalWrite(midPinInv2, LOW);
+		digitalWrite(highPinInv2, HIGH);
+        digitalWrite(highPinInv1, HIGH);
 	}
     else if(speed == 5)
 	{
@@ -172,31 +173,13 @@ void InverterController::setSpeed(int speed)
             digitalWrite(backwardPin, HIGH);
             digitalWrite(forwardPin, LOW);
         }
-        digitalWrite(lowPin, HIGH);
-		digitalWrite(midPinInv1, LOW);
-		digitalWrite(midPinInv2, LOW);
-		digitalWrite(highPinInv2, HIGH);
-        digitalWrite(highPinInv1, HIGH);
-	}
-    else if(speed == 6)
-	{
-        if(forwardEnable == true)
-        {
-            digitalWrite(backwardPin, LOW);
-            digitalWrite(forwardPin, HIGH);
-        }
-        else
-        {
-            digitalWrite(backwardPin, HIGH);
-            digitalWrite(forwardPin, LOW);
-        }
         digitalWrite(lowPin, LOW);
 		digitalWrite(midPinInv1, HIGH);
 		digitalWrite(midPinInv2, HIGH);
 		digitalWrite(highPinInv2, HIGH);
         digitalWrite(highPinInv1, HIGH);
 	}
-    else if(speed == 7)
+    else if(speed == 6)
 	{
         if(forwardEnable == true)
         {

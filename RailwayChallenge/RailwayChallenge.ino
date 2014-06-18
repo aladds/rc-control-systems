@@ -34,6 +34,10 @@ const byte RRTC = 31;
 const byte FIRE = 32;
 const byte RSBC = 33;
 const byte RCEN = 35;
+const byte reGenCharge = 22;
+const byte reGenDrive = 23;
+const byte RMIE = 34;
+const byte brakeRelease = 29;
 
 //Dynamic memory variables
 byte serialBuffer[serialBufferLength];
@@ -43,13 +47,14 @@ byte controlIndex = 0;
 bool connectionLost = true; //WIll stop train and request config
 bool connectionTimeout = false; // for connection timeout
 int currentSpeed = 0;
+bool regenEnabled = false;
 //Yes these pins are odd, I have a photo though
 InverterController Inverters(44, 39, 40, 41, 36, 37, 38);
 
 //Thermistors
-const float voltRes = (204.8*3.8)/200;//(steps per volt x max voltage in) / range
-float thermistorOneReading;
-float thermistorTwoReading;
+const float voltRes = ((1024/5) * 3.8)/200;//(steps per volt x max voltage in) / range
+byte thermistorOneReading;
+byte thermistorTwoReading;
 
 //hall effect sensors, default 20,000 ~= 4m/s
 unsigned long motorOnePeriod = 0;
@@ -152,15 +157,28 @@ void loop() {
     digitalWrite(greenLED, HIGH);
 
     //Thermistor Reading
-    thermistorOneReading = analogRead(thermistorOne) / voltRes;
-    thermistorTwoReading = analogRead(thermistorTwo) / voltRes;
+    thermistorOneReading = round(analogRead(thermistorOne) / voltRes);
+    thermistorTwoReading = round(analogRead(thermistorTwo) / voltRes);
     
     //Speed Reading
     // 1Hz speed is 142857us period
-    motorOneSpeed = (1000000/(motorOnePeriod*numberOfMagnets))*3.6; // this is in Hz
-    motorTwoSpeed = 1000000/(motorTwoPeriod*numberOfMagnets); // this is in Hz
-    
-    Serial.println(motorOneSpeed);
+    if(micros() - motorOneLastTick > 1210000) //slower than 1kph
+    {
+      motorOneSpeed = 0;
+    }
+    else
+    {
+      motorOneSpeed = round(1000000/(motorOnePeriod*numberOfMagnets)); // this is in Hz
+    }
+    if(micros() - motorTwoLastTick > 1210000) //slower than 2kph
+    {
+      motorTwoSpeed = 0;
+    }
+    else
+    {
+      motorTwoSpeed = round(1000000/(motorTwoPeriod*numberOfMagnets)); // this is in Hz
+    }
+
     if(!connectionLost)
     {
       serialUpdate();
@@ -203,6 +221,16 @@ void loop() {
     {
       controlBuffer[controlIndex] = byteIn;
       controlIndex++;
+    }
+  }
+  
+  //Controled Service stop
+  if(currentSpeed == 0 && regenEnable == false)
+  {
+    if(max(motorOneSpeed, motorTwoSpeed) < 3)
+    {
+      Inverters.coast();
+      digitalWrite(brakeRelease, LOW);
     }
   }
   
@@ -284,8 +312,11 @@ void controlerCommand(byte serialIndex)
       switch (controlBuffer[s])
       {
         case 'S': //Speed
-          currentSpeed = controlBuffer[s+1];
-          Inverters.setSpeed(controlBuffer[s+1]);
+          if(regenEnabled == false)
+          {
+            currentSpeed = controlBuffer[s+1];
+            Inverters.setSpeed(controlBuffer[s+1]);
+          }
           s += 2;
           break;
         case 'D': //Direction
@@ -327,26 +358,48 @@ void controlerCommand(byte serialIndex)
           s += 2;
           break;
         case 'C': // Charge Regen
+          digitalWrite(RMIE, LOW);
+          regenEnabled = true;
           if(commandState(controlBuffer[s+1]))
           {
             //charge regen
-            digitalWrite(22, HIGH);
+            digitalWrite(reGenCharge, HIGH);
           }
           else
           {
-            digitalWrite(22, LOW);
+            digitalWrite(reGenCharge, LOW);
           }
           s += 2;
           break;
         case 'Z': //Drive Regen
-          if(!commandState(controlBuffer[s+1]))
+          digitalWrite(RMIE, LOW);
+          regenEnabled = true;
+          if(commandState(controlBuffer[s+1]))
           {
             //Drive Regen
-            digitalWrite(23, HIGH);
+            digitalWrite(reGenDrive, HIGH);
           }
           else
           {
-            digitalWrite(23, LOW);
+            digitalWrite(reGenDrive, LOW);
+          }
+          s += 2;
+          break;
+        case 'L': //Restroke
+          if(commandState(controlBuffer[s+1]))
+          {
+            //DISABLE ALL REGEN
+            digitalWrite(reGenCharge, LOW);
+            digitalWrite(reGenDrive, LOW);
+            //SET STOP SPEED
+            currentSpeed = 0;
+            Inverters.setSpeed(0);
+            //RESTROKE INVERTERS
+            digitalWrite(RMIE, LOW);
+            delay(3000);
+            digitalWrite(RMIE, HIGH);
+            //REGEN IS NOW DISABLED
+            regenEnabled = false;
           }
           s += 2;
           break;
