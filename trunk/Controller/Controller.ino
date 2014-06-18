@@ -31,6 +31,8 @@ bool regenDriveState = false;
 bool whistleState = false;
 bool nextScreenState = false;
 bool prevScreenState = false;
+bool fasterState = false;
+bool slowerState = false;
 bool relayStates[6] = {false, false, false, false, false, false};
 
 //Variables
@@ -152,6 +154,8 @@ byte serialBoolConverter(bool toConvert)
 unsigned long lastRefreshTime = millis();
 const unsigned long debounce = 20;
 unsigned long debounceTime = millis();
+unsigned long slowerDebounce = millis();
+unsigned long fasterDebounce = millis();
 
 void loop() {
   //analogWrite(11, 250);
@@ -175,6 +179,7 @@ void loop() {
     sendSerialCommand('G', serialBoolConverter(genState));
   }
   
+  //REGEN STUFF -------------------------------------------------------
   bool curRegenDrive = !digitalRead(drive);
   if(curRegenDrive != regenDriveState)
   {
@@ -192,6 +197,7 @@ void loop() {
     updateScreen[1] = true;
     currentScreen = 1;
   }
+  //REGEN END ---------------------------------------------------------
   
   bool curWhistleState = !digitalRead(whistle);
   if(curWhistleState != whistleState)
@@ -211,53 +217,50 @@ void loop() {
       currentScreen++;
       updateScreen[currentScreen] = true;
     }
+    else //Wrap arround
+    {
+      currentScreen = 0;
+    }
   }
-  
+  //This is now RESTROKE ---------------------------------------------------------
   bool curPrevScreenState = !digitalRead(screenBack);
   if(curPrevScreenState != prevScreenState && debounceTime + debounce < millis())
   {
     debounceTime = millis();
     prevScreenState = curPrevScreenState;
-    if(currentScreen > 0 && !digitalRead(screenBack))
-    {
-      Serial.println("Back screen");
-      currentScreen--;
-      updateScreen[currentScreen] = true;
-    }
+    currentSpeed = 0;
+    sendSerialCommand('L', serialBoolConverter(true));
   }
-
-  if(speedHold == false && (!digitalRead(fast) || !digitalRead(slow)))
+  //END RESTROKE ------------------------------------------------------------------
+  
+  //SPEED BUTTONS -----------------------------------------------------------------
+  if(!(curRegenDrive || regenDriveState || curRegenChargeState || regenChargeState))
   {
-    speedHold = true;
-    if(!digitalRead(fast) && !digitalRead(slow))
+    bool curFasterState = !digitalRead(fast);
+    if(curFasterState != fasterState && (fasterDebounce + debounce) < millis())
     {
-      //Stop regen mode
-      currentScreen = 0;
-      updateScreen[0] = true;
-      currentSpeed = 0;
-    }
-    else if(!digitalRead(fast))
-    {
-      if(currentSpeed < 7)
-      {
-        currentSpeed++;
-      }
-      sendSerialCommand('S', currentSpeed);
-    }
-    else if(!digitalRead(slow))
-    {
-      if(currentSpeed > 0)
-      {
-        currentSpeed--;
-      }
-      sendSerialCommand('S', currentSpeed);
+      fasterState = curFasterState;
+      fasterDebounce = millis();
+      if(currentSpeed < 6)
+        {
+          currentSpeed++;
+        }
+        sendSerialCommand('S', currentSpeed);
     }
     
+    bool curSlowerState = !digitalRead(slow);
+    if(curSlowerState != slowerState && (slowerDebounce + debounce) < millis())
+    {
+      slowerState = curSlowerState;
+      slowerDebounce = millis();
+      if(currentSpeed > 0)
+        {
+          currentSpeed--;
+        }
+        sendSerialCommand('S', currentSpeed);
+    }
   }
-  else if(digitalRead(slow) && digitalRead(fast))
-  {
-    speedHold = false;
-  }
+  //END SPEED BUTTONS -------------------------------------------------------------
   
   //Check for serial data from train
   while(Serial1.available() > 0)
@@ -279,6 +282,7 @@ void loop() {
   {
     lastRefreshTime = millis();
     sendSerialCommand('U', 0);
+    sendSerialCommand('S', currentSpeed);
     updateLCD();
   }
 }
@@ -340,14 +344,14 @@ void controlerCommand(byte serialIndex)
       case 'V': //spd1
         Serial.println("spd1");
         //Convert from Hz to KPH
-        spd1 = controlBuffer[s+1];// * gearRatio;
+        spd1 = (controlBuffer[s+1] * 3.6) * gearRatio;
         updateScreen[0] = true;
         updateScreen[1] = true;
         s += 1;
         break;
       case 'B': //spd2
         Serial.println("spd2");
-        spd2 = controlBuffer[s+1];// * gearRatio;
+        spd2 = (controlBuffer[s+1] * 3.6) * gearRatio;
         updateScreen[0] = true;
         updateScreen[1] = true;
         s += 1;
@@ -419,12 +423,12 @@ void updateLCD()
     case 0: //Main screen
       lcd.print(" Main Screen");
       lcd.setCursor(0,1);
-      lcd.print("Target Speed: ");
+      lcd.print("Speed Level: ");
       lcd.print(currentSpeed);
-      lcd.print("kph");
+      //lcd.print("kph");
       lcd.setCursor(0,2);
       lcd.print("Drive Speed: ");
-      lcd.print(spd1, 0);
+      lcd.print(spd1, 1);
       lcd.print("hz");//change to kph
       lcd.setCursor(0,3);
       lcd.print("Resistor Temp: ");
