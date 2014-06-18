@@ -241,11 +241,14 @@ void loop() {
     {
       fasterState = curFasterState;
       fasterDebounce = millis();
-      if(currentSpeed < 6)
-        {
-          currentSpeed++;
-        }
-        sendSerialCommand('S', currentSpeed);
+      if(curFasterState == true)
+      {
+        if(currentSpeed < 6)
+          {
+            currentSpeed++;
+          }
+          sendSerialCommand('S', currentSpeed);
+      }
     }
     
     bool curSlowerState = !digitalRead(slow);
@@ -253,11 +256,14 @@ void loop() {
     {
       slowerState = curSlowerState;
       slowerDebounce = millis();
-      if(currentSpeed > 0)
-        {
-          currentSpeed--;
-        }
-        sendSerialCommand('S', currentSpeed);
+      if(curSlowerState == true)
+      {
+        if(currentSpeed > 0)
+          {
+            currentSpeed--;
+          }
+          sendSerialCommand('S', currentSpeed);
+      }
     }
   }
   //END SPEED BUTTONS -------------------------------------------------------------
