@@ -18,14 +18,16 @@ const byte inverterPower = 34;
 const byte numberOfMagnets = 1;
 const int relayDelay = 200;
 const unsigned long updateTime = 1777;//ms
+const unsigned long minimumPeriod = 1207729; //1kph
 
 //input relays
-const byte RT = 47;
-const byte SBC = 48;
-const byte BPS = 49;
+const byte RT = 53;//47;INV
+const byte SBC = 52;//48;MIC
+const byte BPS = 51;//49;COMC
 const byte GH = 50;
-const byte COMC = 51;
-const byte MIC = 52;
+const byte COMC = 49;//51;BPS
+const byte MIC = 48;//52;SBC
+const byte INV = 47;
 //53 is connected and spare
 
 //Common pins
@@ -162,21 +164,21 @@ void loop() {
     
     //Speed Reading
     // 1Hz speed is 142857us period
-    if(micros() - motorOneLastTick > 1210000) //slower than 1kph
+    if(micros() - motorOneLastTick > minimumPeriod) //slower than 1kph
     {
       motorOneSpeed = 0;
     }
     else
     {
-      motorOneSpeed = round(1000000/(motorOnePeriod*numberOfMagnets)); // this is in Hz
+      motorOneSpeed = round((1000000/(motorOnePeriod*numberOfMagnets))*8); // this is in Hz
     }
-    if(micros() - motorTwoLastTick > 1210000) //slower than 2kph
+    if(micros() - motorTwoLastTick > minimumPeriod) //slower than 1kph
     {
       motorTwoSpeed = 0;
     }
     else
     {
-      motorTwoSpeed = round(1000000/(motorTwoPeriod*numberOfMagnets)); // this is in Hz
+      motorTwoSpeed = round((1000000/(motorTwoPeriod*numberOfMagnets))*8); // this is in Hz
     }
 
     if(!connectionLost)
@@ -264,14 +266,14 @@ void serialUpdate()
   Serial1.write('R');
   byte states = 0;
     //note: MIC is the last input pin, RT is the first
-  for(byte b = 0; b < MIC - RT; b++)
+  for(byte b = 0; b < (53-47); b++)
   {
-    states |= (digitalRead(RT+b) << b);
+    states |= (!digitalRead(47+b) << b);
+    Serial.println((!digitalRead(47+b) << b));
     //Serial.println((digitalRead(RT+b) << b), BIN);
   }
   //Serial.println(states, BIN);
   Serial1.write('S');
-  Serial1.write(currentSpeed);
   Serial1.write(states);
   Serial1.write('\n');
 }
@@ -396,7 +398,7 @@ void controlerCommand(byte serialIndex)
             Inverters.setSpeed(0);
             //RESTROKE INVERTERS
             digitalWrite(RMIE, LOW);
-            delay(3000);
+            delay(10000);
             digitalWrite(RMIE, HIGH);
             //REGEN IS NOW DISABLED
             regenEnabled = false;
@@ -497,6 +499,8 @@ void debugCommand(byte serialIndex)
     Serial.println(!digitalRead(COMC));
     Serial.print("MIC: ");
     Serial.println(!digitalRead(MIC));
+    Serial.print("INV: ");
+    Serial.println(!digitalRead(INV));
   }
   else if(command == "flick")
   {
