@@ -350,14 +350,14 @@ void controlerCommand(byte serialIndex)
       case 'V': //spd1
         Serial.println("spd1");
         //Convert from Hz to KPH
-        spd1 = (controlBuffer[s+1] * 3.6) * gearRatio;
+        spd1 = ((controlBuffer[s+1] * 3.6) * gearRatio)/8;
         updateScreen[0] = true;
         updateScreen[1] = true;
         s += 1;
         break;
       case 'B': //spd2
         Serial.println("spd2");
-        spd2 = (controlBuffer[s+1] * 3.6) * gearRatio;
+        spd2 = ((controlBuffer[s+1] * 3.6) * gearRatio)/8;
         updateScreen[0] = true;
         updateScreen[1] = true;
         s += 1;
@@ -435,7 +435,7 @@ void updateLCD()
       lcd.setCursor(0,2);
       lcd.print("Drive Speed: ");
       lcd.print(spd1, 1);
-      lcd.print("hz");//change to kph
+      lcd.print("kph");//change to kph
       lcd.setCursor(0,3);
       lcd.print("Resistor Temp: ");
       if(temp1 > temp2)
