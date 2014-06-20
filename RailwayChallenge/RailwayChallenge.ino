@@ -18,16 +18,17 @@ const byte inverterPower = 34;
 const byte numberOfMagnets = 1;
 const int relayDelay = 200;
 const unsigned long updateTime = 1777;//ms
+const unsigned long speedUpdateTime = 250;
 const unsigned long minimumPeriod = 1207729; //1kph
 
 //input relays
-const byte RT = 53;//47;INV
-const byte SBC = 52;//48;MIC
-const byte BPS = 51;//49;COMC
-const byte GH = 50;
-const byte COMC = 49;//51;BPS
-const byte MIC = 48;//52;SBC
-const byte INV = 47;
+const byte RT = 53;//  0
+const byte SBC = 52;// 1
+const byte BPS = 51;// 2
+const byte GH = 50;//  3
+const byte COMC = 49;//4
+const byte MIC = 48;// 5
+const byte INV = 47;// 6
 //53 is connected and spare
 
 //Common pins
@@ -48,7 +49,7 @@ byte bufferIndex = 0;
 byte controlIndex = 0;
 bool connectionLost = true; //WIll stop train and request config
 bool connectionTimeout = false; // for connection timeout
-int currentSpeed = 0;
+byte currentSpeed = 0;
 bool regenEnabled = false;
 //Yes these pins are odd, I have a photo though
 InverterController Inverters(44, 39, 40, 41, 36, 37, 38);
@@ -133,13 +134,9 @@ void setup() {
 }
 //byte serialIndex = Serial.readBytesUntil(termChar, serialBuffer, serialBufferLength); 
 unsigned long lastUpdateTime = millis();
+unsigned long lastSpeedUpdateTime = millis();
 void loop() {
-  
-  if(currentSpeed == 0 && motorOneSpeed < 2)//less than 2 Hz
-  {
-     //Instruct inverters to coast
-     //bring in the air brakes
-  }
+
   
   if(millis() >= updateTime + lastUpdateTime)
   {
@@ -162,6 +159,19 @@ void loop() {
     thermistorOneReading = round(analogRead(thermistorOne) / voltRes);
     thermistorTwoReading = round(analogRead(thermistorTwo) / voltRes);
     
+    
+
+    if(!connectionLost)
+    {
+      serialUpdate();
+    }
+    digitalWrite(greenLED, LOW);
+  }
+  
+  //Speed Update
+  if(millis() > speedUpdateTime + lastSpeedUpdateTime)
+  {
+    lastSpeedUpdateTime = millis();
     //Speed Reading
     // 1Hz speed is 142857us period
     if(micros() - motorOneLastTick > minimumPeriod) //slower than 1kph
@@ -180,14 +190,12 @@ void loop() {
     {
       motorTwoSpeed = round((1000000/(motorTwoPeriod*numberOfMagnets))*8); // this is in Hz
     }
-
-    if(!connectionLost)
-    {
-      serialUpdate();
-    }
-    digitalWrite(greenLED, LOW);
+    Serial1.write('V');
+    Serial1.write(motorOneSpeed);
+    Serial1.write('B');
+    Serial1.write(motorTwoSpeed);
+    Serial1.write('\n');
   }
-  
   //Check USB serial for debug commands
   while(Serial.available() > 0)
   {
@@ -259,22 +267,17 @@ void serialUpdate()
   Serial1.write(thrm1);
   Serial1.write('Y');
   Serial1.write(thrm2);
-  Serial1.write('V');
-  Serial1.write(motorOneSpeed);
-  Serial1.write('B');
-  Serial1.write(motorTwoSpeed);
   Serial1.write('R');
   byte states = 0;
     //note: MIC is the last input pin, RT is the first
-  for(byte b = 0; b < (53-47); b++)
+  for(byte b = 0; b < 7; b++)//7 inputs to store
   {
-    states |= (!digitalRead(47+b) << b);
-    Serial.println((!digitalRead(47+b) << b));
-    //Serial.println((digitalRead(RT+b) << b), BIN);
+    states |= digitalRead(47+b);
+    states = states << 1;
   }
-  //Serial.println(states, BIN);
-  Serial1.write('S');
   Serial1.write(states);
+  Serial1.write('S');
+  Serial1.write(currentSpeed);
   Serial1.write('\n');
 }
 

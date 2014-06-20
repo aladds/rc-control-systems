@@ -33,7 +33,7 @@ bool nextScreenState = false;
 bool prevScreenState = false;
 bool fasterState = false;
 bool slowerState = false;
-bool relayStates[6] = {false, false, false, false, false, false};
+bool relayStates[7] = {false, false, false, false, false, false, false};
 
 //Variables
 byte temp1 = 0;
@@ -211,16 +211,19 @@ void loop() {
   {
     debounceTime = millis();
     nextScreenState = curNextScreenState;
-    if(currentScreen < 3 && !digitalRead(screenForward))
+    if(!digitalRead(screenForward))
     {
-      Serial.println("Forward Screen");
-      currentScreen++;
+      if(currentScreen < 3)
+      {
+        currentScreen++;
+      }
+      else
+      {
+        currentScreen = 0;
+      }
       updateScreen[currentScreen] = true;
     }
-    else //Wrap arround
-    {
-      currentScreen = 0;
-    }
+
   }
   //This is now RESTROKE ---------------------------------------------------------
   bool curPrevScreenState = !digitalRead(screenBack);
@@ -228,8 +231,11 @@ void loop() {
   {
     debounceTime = millis();
     prevScreenState = curPrevScreenState;
-    currentSpeed = 0;
-    sendSerialCommand('L', serialBoolConverter(true));
+    if(!digitalRead(screenBack))
+    {
+      currentSpeed = 0;
+      sendSerialCommand('L', serialBoolConverter(true));
+    }
   }
   //END RESTROKE ------------------------------------------------------------------
   
@@ -373,13 +379,15 @@ void controlerCommand(byte serialIndex)
         break;
       case 'R': //Relay States
         byte states = controlBuffer[s+1];
-        Serial.print("RelayStates ");
-        for(int k = 0; k < 6; k++)
+        for(int k = 7; k > 0; k--)
         {
           relayStates[k] = (states >> k) & B00000001;
-          Serial.print(relayStates[k], BIN);
+        }   
+        if(relayStates[6] == true)
+        {
+          line1Warning = "Inverter Trip!";
+          currentScreen = 3;
         }
-        Serial.print("\n");     
         updateScreen[2] = true;
         s += 1;
         break;
@@ -467,19 +475,19 @@ void updateLCD()
       lcd.print(" Relay States");
       lcd.setCursor(0,1);
       lcd.print("Rnd Trn:");
-      lcd.print(relayStates[0]);
+      lcd.print(!relayStates[0]);
       lcd.print("|Brake PS:");
-      lcd.print(relayStates[3]);
+      lcd.print(!relayStates[2]);
       lcd.setCursor(0,2);
       lcd.print("    SBC:");
-      lcd.print(relayStates[1]);
+      lcd.print(!relayStates[1]);
       lcd.print("|    COMC:");
-      lcd.print(relayStates[4]);
+      lcd.print(!relayStates[4]);
       lcd.setCursor(0,3);
       lcd.print("  Gen H:");
-      lcd.print(relayStates[2]);
+      lcd.print(!relayStates[3]);
       lcd.print("|     MIC:");
-      lcd.print(relayStates[5]);
+      lcd.print(!relayStates[5]);
       break;
     case 3://Warning Screen
       lcd.print(" Warning Messages");
