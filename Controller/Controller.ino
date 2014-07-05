@@ -33,7 +33,9 @@ bool nextScreenState = false;
 bool prevScreenState = false;
 bool fasterState = false;
 bool slowerState = false;
-bool relayStates[7] = {false, false, false, false, false, false, false};
+bool relayStates[7] = {true, true, true, true, true, true, true};
+bool ackError = false;
+bool invTrip = false;
 
 //Variables
 byte temp1 = 0;
@@ -55,7 +57,7 @@ const byte serialTrue = 170;
 const byte serialFalse = 85;//85
 const byte numberOfScreens = 4;
 const unsigned long screenRefreshTime = 250;
-const float gearRatio = 0.23;
+const float gearRatio = 0.1715;
 
 //this can be used to make screen refresh more effecient. It is currently disabled.
 bool updateScreen[numberOfScreens] = {true, false, false, false};
@@ -156,9 +158,19 @@ const unsigned long debounce = 20;
 unsigned long debounceTime = millis();
 unsigned long slowerDebounce = millis();
 unsigned long fasterDebounce = millis();
+unsigned long lastAlarm = millis();
+unsigned long alarmPeriod = 5;
 
 void loop() {
-  //analogWrite(11, 250);
+  if(relayStates[0] == true)
+  {
+    analogWrite(11, 800);
+    analogWrite(11, 500);
+  }
+  else
+  {
+    analogWrite(11, 0);
+  }
   
   bool curDir = !digitalRead(fb);
   if(curDir != directionState)
@@ -213,6 +225,7 @@ void loop() {
     nextScreenState = curNextScreenState;
     if(!digitalRead(screenForward))
     {
+      ackError = true;
       if(currentScreen < 3)
       {
         currentScreen++;
@@ -234,6 +247,7 @@ void loop() {
     if(!digitalRead(screenBack))
     {
       currentSpeed = 0;
+      currentScreen = 0;
       sendSerialCommand('L', serialBoolConverter(true));
     }
   }
@@ -379,14 +393,21 @@ void controlerCommand(byte serialIndex)
         break;
       case 'R': //Relay States
         byte states = controlBuffer[s+1];
-        for(int k = 7; k > 0; k--)
+        for(int k = 6; k >= 0; k--)
         {
           relayStates[k] = (states >> k) & B00000001;
         }   
         if(relayStates[6] == true)
         {
-          line1Warning = "Inverter Trip!";
-          currentScreen = 3;
+          if(ackError == false)
+          {
+            line1Warning = "Inverter Trip!";
+            //currentScreen =   3;
+          }
+        }
+        else
+        {
+          ackError = false;
         }
         updateScreen[2] = true;
         s += 1;
@@ -445,30 +466,35 @@ void updateLCD()
       lcd.print(spd1, 1);
       lcd.print("kph");//change to kph
       lcd.setCursor(0,3);
-      lcd.print("Resistor Temp: ");
-      if(temp1 > temp2)
+      lcd.print("Inverter State: ");
+      if(relayStates[5] == true)
       {
-        lcd.print(temp1, 3);
+        lcd.print("Off");
+      }
+      else if(relayStates[6] == true)
+      {
+        lcd.print("Trip");
       }
       else
       {
-        lcd.print(temp1, 3);//SHOULD BE TEMP2!
+        lcd.print("Set");
       }
-      lcd.print("C");
       break;
     case 1://Regen screen
       lcd.print(" Regen Screen");
       lcd.setCursor(0,1);
       lcd.print("Regen State: ");
-      if(regenChargeState)
-        lcd.print("CHARGE");
+      if(regenChargeState && regenDriveState)
+        lcd.print("BOTH");
       else if(regenDriveState)
         lcd.print("DRIVE");
+      else if(regenChargeState)
+        lcd.print("CHARGE");
       else
         lcd.print("IDLE");
       lcd.setCursor(0,2);
       lcd.print("Current Speed: ");
-      lcd.print(spd1, 0);
+      lcd.print(spd1, 1);
       lcd.print("kph");
       break;
     case 2://Relay states

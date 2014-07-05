@@ -1,6 +1,6 @@
 #include <InverterController.h>
 
-
+//NORMAL MODE
 
 
 //Program storage space     22     23      24        25       26     27      28       29        30       31      32      33        34     35     36    37    38    39    40    41    42     43     44   45
@@ -20,6 +20,7 @@ const int relayDelay = 200;
 const unsigned long updateTime = 1777;//ms
 const unsigned long speedUpdateTime = 250;
 const unsigned long minimumPeriod = 1207729; //1kph
+const unsigned long tripSetTime = 10000;
 
 //input relays
 const byte RT = 53;//  0
@@ -29,7 +30,6 @@ const byte GH = 50;//  3
 const byte COMC = 49;//4
 const byte MIC = 48;// 5
 const byte INV = 47;// 6
-//53 is connected and spare
 
 //Common pins
 const byte REN = 45;
@@ -51,6 +51,12 @@ bool connectionLost = true; //WIll stop train and request config
 bool connectionTimeout = false; // for connection timeout
 byte currentSpeed = 0;
 bool regenEnabled = false;
+bool tripSet = false;
+unsigned long tripSetStartTime = millis();
+unsigned long startBrakeTime = 0;
+bool startBrakeBool = false;
+bool printOnce = false;
+int regenCounter = 0;
 //Yes these pins are odd, I have a photo though
 InverterController Inverters(44, 39, 40, 41, 36, 37, 38);
 
@@ -136,7 +142,31 @@ void setup() {
 unsigned long lastUpdateTime = millis();
 unsigned long lastSpeedUpdateTime = millis();
 void loop() {
-
+  // Break Rate Debug ---
+  if(!digitalRead(BPS) && !startBrakeBool)
+  {
+     startBrakeBool = true;
+     startBrakeTime = millis();
+  }
+  else if(!digitalRead(BPS) && digitalRead(SBC))
+  {
+    Serial.print("Stop time = ");
+    Serial.println(millis() - startBrakeTime);
+    printOnce = true;
+  }
+  else if(digitalRead(BPS))
+  {
+    startBrakeBool = false;
+    printOnce = false;
+  }
+  // Brake Rate Debug End --- 
+  
+  
+  //REGEN
+  if(digitalRead(reGenDrive) && regenCounter < 0)
+  {
+    digitalWrite(reGenDrive, LOW);
+  }
   
   if(millis() >= updateTime + lastUpdateTime)
   {
@@ -150,7 +180,7 @@ void loop() {
     else
     {
       connectionTimeout = true;
-      Serial.println("Connected");
+      //Serial.println("Connected");
     }
     
     digitalWrite(greenLED, HIGH);
@@ -158,8 +188,6 @@ void loop() {
     //Thermistor Reading
     thermistorOneReading = round(analogRead(thermistorOne) / voltRes);
     thermistorTwoReading = round(analogRead(thermistorTwo) / voltRes);
-    
-    
 
     if(!connectionLost)
     {
@@ -167,7 +195,6 @@ void loop() {
     }
     digitalWrite(greenLED, LOW);
   }
-  
   //Speed Update
   if(millis() > speedUpdateTime + lastSpeedUpdateTime)
   {
@@ -237,10 +264,36 @@ void loop() {
   //Controled Service stop
   if(currentSpeed == 0 && regenEnable == false)
   {
-    if(max(motorOneSpeed, motorTwoSpeed) < 3)
+    if(motorOneSpeed < 2.5)
     {
-      Inverters.coast();
+      //Start Hack -- Applies Brakes
+      digitalWrite(39, LOW);
+      digitalWrite(40, LOW);
+      //End Hack --
       digitalWrite(brakeRelease, LOW);
+    }
+  }
+  
+  if(tripSet == true)
+  {
+    if(tripSetTime + tripSetStartTime > millis())
+    {
+      //DISABLE ALL REGEN
+      digitalWrite(reGenCharge, LOW);
+      digitalWrite(reGenDrive, LOW);
+      //SET STOP SPEED
+      currentSpeed = 0;
+      Inverters.setSpeed(0);
+      //RESTROKE INVERTERS
+      digitalWrite(RMIE, LOW);
+    }
+    else
+    {  
+      tripSet = false;
+      regenCounter = 0;
+      digitalWrite(RMIE, HIGH);
+      //REGEN IS NOW DISABLED
+      regenEnabled = false;
     }
   }
   
@@ -272,8 +325,12 @@ void serialUpdate()
     //note: MIC is the last input pin, RT is the first
   for(byte b = 0; b < 7; b++)//7 inputs to store
   {
-    states |= digitalRead(47+b);
     states = states << 1;
+    if(digitalRead(47+b))
+    {
+      states |= B00000001;
+    }
+    
   }
   Serial1.write(states);
   Serial1.write('S');
@@ -379,9 +436,15 @@ void controlerCommand(byte serialIndex)
         case 'Z': //Drive Regen
           digitalWrite(RMIE, LOW);
           regenEnabled = true;
+          regenCounter--;
           if(commandState(controlBuffer[s+1]))
           {
             //Drive Regen
+            digitalWrite(brakeRelease, HIGH);
+            while(digitalRead(BPS))
+            {
+              delay(10);
+            }
             digitalWrite(reGenDrive, HIGH);
           }
           else
@@ -393,18 +456,8 @@ void controlerCommand(byte serialIndex)
         case 'L': //Restroke
           if(commandState(controlBuffer[s+1]))
           {
-            //DISABLE ALL REGEN
-            digitalWrite(reGenCharge, LOW);
-            digitalWrite(reGenDrive, LOW);
-            //SET STOP SPEED
-            currentSpeed = 0;
-            Inverters.setSpeed(0);
-            //RESTROKE INVERTERS
-            digitalWrite(RMIE, LOW);
-            delay(10000);
-            digitalWrite(RMIE, HIGH);
-            //REGEN IS NOW DISABLED
-            regenEnabled = false;
+            tripSet = true;
+            tripSetStartTime= millis();
           }
           s += 2;
           break;
@@ -558,22 +611,26 @@ void togglePin(byte pinNumber)
 
 void motorOneSpeedInterupt()
 {
-  if(micros() - motorOneLastTick > (30000/numberOfMagnets))
+  if(micros() - motorOneLastTick > (30000)) // /numberOfMagnets)
   {
-    motorOnePeriod = micros() - motorOneLastTick;  
-    Serial.print("Motor1 period: ");
-    Serial.println(motorOnePeriod);
+    motorOnePeriod = micros() - motorOneLastTick;
+    if(regenEnabled == true && digitalRead(reGenCharge))
+    {
+      regenCounter++;
+    }
+    if(regenEnabled == true && digitalRead(reGenDrive))
+    {
+      regenCounter--;
+    }
   }
   motorOneLastTick = micros();
 }
 
 void motorTwoSpeedInterupt()
 {
-  if(micros() - motorTwoLastTick > (30000/numberOfMagnets))
+  if(micros() - motorTwoLastTick > (30000)) // /numberOfMagnets)
   {
     motorTwoPeriod = micros() - motorTwoLastTick;  
-    Serial.print("Motor2 period: ");
-    Serial.println(motorTwoPeriod);
   }
   motorTwoLastTick = micros();
 }
