@@ -1,0 +1,484 @@
+{\rtf1\ansi\ansicpg1252\deff0\nouicompat\deflang2057{\fonttbl{\f0\fnil\fcharset0 Courier New;}}
+{\*\generator Riched20 6.3.9600}\viewkind4\uc1 
+\pard\sl276\slmult1\f0\fs16\lang9 /*\par
+**This class provides control and comunication for the control handle. It also \par
+**provides LCD output and calculates speed and tempreate from recived bytes over serial\par
+*/\par
+\par
+#include <LiquidCrystal.h>\par
+\par
+//Setup LCD\par
+LiquidCrystal lcd(22,23,24,25,26,27,28,29,30,31,32); \par
+\par
+//Constants\par
+const byte slow = 33;\par
+const byte fast = 34;\par
+const byte gen = 40;\par
+const byte fb = 41;\par
+const byte charge = 42;\par
+const byte drive = 43;\par
+const byte whistle = 45;\par
+const byte screenBack = 46;\par
+const byte screenForward = 47;\par
+\par
+//Serial Buffer\par
+byte controlBuffer[128];\par
+byte controlIndex = 0;\par
+\par
+//persistant states\par
+bool genState = false;\par
+bool directionState = false;\par
+bool regenChargeState = false;\par
+bool regenDriveState = false;\par
+bool whistleState = false;\par
+bool nextScreenState = false;\par
+bool prevScreenState = false;\par
+bool relayStates[6] = \{false, false, false, false, false, false\};\par
+\par
+//Variables\par
+byte temp1 = 0;\par
+byte temp2 = 0;\par
+float spd1 = 0;\par
+float spd2 = 0;\par
+byte currentSpeed = 0;\par
+byte currentScreen = 3; //0 is main screen\par
+bool speedHold = false;\par
+String line1Warning = "Connecting...";\par
+bool serialLinkUp = false;\par
+char serialTest = 'A';\par
+\par
+//Contrast setting\par
+const byte con = 64;\par
+\par
+//other constants\par
+const byte serialTrue = 170;\par
+const byte serialFalse = 85;//85\par
+const byte numberOfScreens = 4;\par
+const unsigned long screenRefreshTime = 250;\par
+const float gearRatio = 0.23;\par
+\par
+//this can be used to make screen refresh more effecient. It is currently disabled.\par
+bool updateScreen[numberOfScreens] = \{true, false, false, false\};\par
+\par
+//Custom LCD chars\par
+byte smiley[8] = \{\par
+  B00000,\par
+  B10001,\par
+  B00000,\par
+  B00000,\par
+  B10001,\par
+  B01110,\par
+  B00000,\par
+\};\par
+\par
+byte roundelLeft[8] = \{\par
+  B00000,\par
+  B00011,\par
+  B00110,\par
+  B01100,\par
+  B11111,\par
+  B01100,\par
+  B00110,\par
+  B00011\par
+\};\par
+\par
+byte roundelRight[8] = \{\par
+  B00000,\par
+  B11000,\par
+  B01100,\par
+  B00110,\par
+  B11111,\par
+  B00110,\par
+  B01100,\par
+  B11000\par
+\};\par
+\par
+void setup() \{\par
+  \par
+  //set up PWM pin for LCD contrast\par
+  pinMode(2, OUTPUT);\par
+  analogWrite(2, con);\par
+  \par
+  //Optinal Buzer\par
+  pinMode(11, OUTPUT);\par
+  \par
+  //Start up serial link to train\par
+  Serial.begin(19200);\par
+  Serial1.begin(19200);\par
+  \par
+  //Set up input pins\par
+  pinMode(slow, INPUT_PULLUP);\par
+  pinMode(fast, INPUT_PULLUP);\par
+  pinMode(gen, INPUT_PULLUP);\par
+  pinMode(fb, INPUT_PULLUP);\par
+  pinMode(charge, INPUT_PULLUP);\par
+  pinMode(drive, INPUT_PULLUP);\par
+  pinMode(whistle, INPUT_PULLUP);\par
+  pinMode(screenBack, INPUT_PULLUP);\par
+  pinMode(screenForward, INPUT_PULLUP);\par
+  \par
+  //intialse LCD\par
+  lcd.begin(20,4);\par
+  lcd.createChar(0, smiley);\par
+  lcd.createChar(1, roundelLeft);\par
+  lcd.createChar(2, roundelRight);\par
+  lcd.home();\par
+  lcd.print("-RC Train Controler-");\par
+  lcd.setCursor(0,1);\par
+  lcd.print("Connecting");\par
+  unsigned int dotCount = 0;\par
+  lcd.setCursor(0,2);\par
+  for(int p = 0; p < 40; p++)\par
+  \{\par
+    if(p % 2 == 0)\par
+      lcd.write(byte(1));\par
+    else\par
+      lcd.write(byte(2));\par
+  \}\par
+  delay(200);//to show of roundels\par
+\}\par
+\par
+byte serialBoolConverter(bool toConvert)\par
+\{\par
+  if(toConvert)\par
+  \{\par
+    return serialTrue;\par
+  \}\par
+  else\par
+  \{\par
+    return serialFalse;\par
+  \}\par
+\}\par
+\par
+//Variables for debounce timing\par
+unsigned long lastRefreshTime = millis();\par
+const unsigned long debounce = 20;\par
+unsigned long debounceTime = millis();\par
+\par
+void loop() \{\par
+  //analogWrite(11, 250);\par
+  \par
+  bool curDir = !digitalRead(fb);\par
+  if(curDir != directionState)\par
+  \{\par
+    //toggle\par
+    delay(20);\par
+    directionState = curDir;\par
+    sendSerialCommand('D', serialBoolConverter(directionState));\par
+  \}\par
+  \par
+  bool curGen = !digitalRead(gen);\par
+  if(curGen != genState)\par
+  \{\par
+    //this is a toggle switch\par
+    delay(20);\par
+    Serial.println(genState);\par
+    genState = curGen;\par
+    sendSerialCommand('G', serialBoolConverter(genState));\par
+  \}\par
+  \par
+  bool curRegenDrive = !digitalRead(drive);\par
+  if(curRegenDrive != regenDriveState)\par
+  \{\par
+    regenDriveState = curRegenDrive;\par
+    sendSerialCommand('Z', serialBoolConverter(regenDriveState));\par
+    updateScreen[1] = true;\par
+    currentScreen = 1;\par
+  \}\par
+  \par
+  bool curRegenChargeState = !digitalRead(charge);\par
+  if(curRegenChargeState != regenChargeState)\par
+  \{\par
+    regenChargeState = curRegenChargeState;\par
+    sendSerialCommand('C', serialBoolConverter(regenChargeState));\par
+    updateScreen[1] = true;\par
+    currentScreen = 1;\par
+  \}\par
+  \par
+  bool curWhistleState = !digitalRead(whistle);\par
+  if(curWhistleState != whistleState)\par
+  \{\par
+    whistleState = curWhistleState;\par
+    sendSerialCommand('W', serialBoolConverter(whistleState));\par
+  \}\par
+  \par
+  bool curNextScreenState = !digitalRead(screenForward);\par
+  if(curNextScreenState != nextScreenState  && (debounceTime + debounce) < millis())\par
+  \{\par
+    debounceTime = millis();\par
+    nextScreenState = curNextScreenState;\par
+    if(currentScreen < 3 && !digitalRead(screenForward))\par
+    \{\par
+      Serial.println("Forward Screen");\par
+      currentScreen++;\par
+      updateScreen[currentScreen] = true;\par
+    \}\par
+  \}\par
+  \par
+  bool curPrevScreenState = !digitalRead(screenBack);\par
+  if(curPrevScreenState != prevScreenState && debounceTime + debounce < millis())\par
+  \{\par
+    debounceTime = millis();\par
+    prevScreenState = curPrevScreenState;\par
+    if(currentScreen > 0 && !digitalRead(screenBack))\par
+    \{\par
+      Serial.println("Back screen");\par
+      currentScreen--;\par
+      updateScreen[currentScreen] = true;\par
+    \}\par
+  \}\par
+\par
+  if(speedHold == false && (!digitalRead(fast) || !digitalRead(slow)))\par
+  \{\par
+    speedHold = true;\par
+    if(!digitalRead(fast) && !digitalRead(slow))\par
+    \{\par
+      //Stop regen mode\par
+      currentScreen = 0;\par
+      updateScreen[0] = true;\par
+      currentSpeed = 0;\par
+    \}\par
+    else if(!digitalRead(fast))\par
+    \{\par
+      if(currentSpeed < 4)\par
+      \{\par
+        currentSpeed++;\par
+      \}\par
+      sendSerialCommand('S', currentSpeed);\par
+    \}\par
+    else if(!digitalRead(slow))\par
+    \{\par
+      if(currentSpeed > 0)\par
+      \{\par
+        currentSpeed--;\par
+      \}\par
+      sendSerialCommand('S', currentSpeed);\par
+    \}\par
+    \par
+  \}\par
+  else if(digitalRead(slow) && digitalRead(fast))\par
+  \{\par
+    speedHold = false;\par
+  \}\par
+  \par
+  //Check for serial data from train\par
+  while(Serial1.available() > 0)\par
+  \{\par
+    byte byteIn = Serial1.read();\par
+    if(byteIn == '\\n')\par
+    \{\par
+      controlerCommand(controlIndex);\par
+      controlIndex = 0;\par
+    \}\par
+    else\par
+    \{\par
+      controlBuffer[controlIndex] = byteIn;\par
+      controlIndex++;\par
+    \}\par
+  \}\par
+  \par
+  if(millis() >= screenRefreshTime + lastRefreshTime)\par
+  \{\par
+    lastRefreshTime = millis();\par
+    sendSerialCommand('U', 0);\par
+    updateLCD();\par
+  \}\par
+\}\par
+\par
+bool activtyToggle = false;\par
+\par
+void controlerCommand(byte serialIndex)\par
+\{\par
+  //Do Some Work\par
+  if( serialIndex < 2)\par
+  \{\par
+    return;\par
+  \}\par
+  \par
+  lcd.setCursor(19,0);\par
+  if(activtyToggle)\par
+  \{\par
+    serialTest = 'A';\par
+    \par
+  \}\par
+  else\par
+  \{\par
+    serialTest = 'B';\par
+  \}\par
+  activtyToggle = !activtyToggle;\par
+  \par
+  for(int s = 0; s < serialIndex; s++)\par
+  \{\par
+    //checksum\par
+    switch (controlBuffer[s])\par
+    \{ \par
+      case 'Q': //Start\par
+        //The Gen and Dir states must be sent as they are toggle switches\par
+        serialLinkUp = true;\par
+        Serial.println("Start");\par
+        Serial1.write('D');\par
+        Serial1.write(serialBoolConverter(directionState));\par
+        Serial1.write(serialBoolConverter(directionState));\par
+        Serial1.write('G');\par
+        Serial1.write(serialBoolConverter(genState));\par
+        Serial1.write(serialBoolConverter(genState));\par
+        Serial1.write('\\n');\par
+        currentScreen = 0;\par
+        s += 1;\par
+        break;\par
+      case 'T': //Therm1\par
+        Serial.println("Therm1");\par
+        temp1 = controlBuffer[s+1];\par
+        updateScreen[3] = true;\par
+        s += 1;\par
+        break;\par
+      case 'Y': //Therm2\par
+        Serial.println("THerm2");\par
+        temp2 = controlBuffer[s+1];\par
+        updateScreen[0] = true;\par
+        updateScreen[2] = true;\par
+        s += 1;\par
+        break;\par
+      case 'V': //spd1\par
+        Serial.println("spd1");\par
+        //Convert from Hz to KPH\par
+        spd1 = controlBuffer[s+1] * gearRatio;\par
+        updateScreen[0] = true;\par
+        updateScreen[1] = true;\par
+        s += 1;\par
+        break;\par
+      case 'B': //spd2\par
+        Serial.println("spd2");\par
+        spd2 = controlBuffer[s+1] * gearRatio;\par
+        updateScreen[0] = true;\par
+        updateScreen[1] = true;\par
+        s += 1;\par
+        break;\par
+      case 'M':\par
+        updateScreen[3] = true;\par
+        currentScreen = 3;\par
+        s+= 1;\par
+        break;\par
+      case 'S':\par
+        currentSpeed = controlBuffer[s+1];\par
+        s+=1;\par
+        break;\par
+      case 'R': //Relay States\par
+        byte states = controlBuffer[s+1];\par
+        Serial.print("RelayStates ");\par
+        for(int k = 0; k < 6; k++)\par
+        \{\par
+          relayStates[k] = (states >> k) & B00000001;\par
+          Serial.print(relayStates[k], BIN);\par
+        \}\par
+        Serial.print("\\n");     \par
+        updateScreen[2] = true;\par
+        s += 1;\par
+        break;\par
+      \par
+    \}    \par
+  \}\par
+\}\par
+\par
+void sendSerialCommand(char type, byte value)\par
+\{\par
+  if(serialLinkUp)\par
+  \{\par
+    Serial1.write(type);\par
+    Serial1.write(value);\par
+    Serial1.write(value);\par
+    Serial1.write('\\n');\par
+  \}\par
+\}\par
+\par
+//LCD Functions\par
+void updateLCD()\par
+\{\par
+  if(currentScreen > 3)\par
+  \{\par
+    //currentScreen = 0;\par
+  \}\par
+  \par
+  if(!updateScreen[currentScreen])\par
+  \{\par
+    //return;\par
+  \}\par
+  else\par
+  \{\par
+    updateScreen[currentScreen] = false;\par
+  \}\par
+  \par
+  lcd.clear();\par
+  lcd.setCursor(19,0);\par
+  lcd.print(serialTest);\par
+  lcd.home();\par
+  lcd.print(currentScreen+1);\par
+  lcd.print("/");\par
+  lcd.print(numberOfScreens);\par
+  \par
+  switch (currentScreen) \par
+  \{\par
+    case 0: //Main screen\par
+      lcd.print(" Main Screen");\par
+      lcd.setCursor(0,1);\par
+      lcd.print("Target Speed: ");\par
+      lcd.print(currentSpeed);\par
+      lcd.print("kph");\par
+      lcd.setCursor(0,2);\par
+      lcd.print("Drive Speed: ");\par
+      lcd.print(spd1, 0);\par
+      lcd.print("kph");\par
+      lcd.setCursor(0,3);\par
+      lcd.print("Resistor Temp: ");\par
+      if(temp1 > temp2)\par
+      \{\par
+        lcd.print(temp1, 3);\par
+      \}\par
+      else\par
+      \{\par
+        lcd.print(temp1, 3);//SHOULD BE TEMP2!\par
+      \}\par
+      lcd.print("C");\par
+      break;\par
+    case 1://Regen screen\par
+      lcd.print(" Regen Screen");\par
+      lcd.setCursor(0,1);\par
+      lcd.print("Regen State: ");\par
+      if(regenChargeState)\par
+        lcd.print("CHARGE");\par
+      else if(regenDriveState)\par
+        lcd.print("DRIVE");\par
+      else\par
+        lcd.print("IDLE");\par
+      lcd.setCursor(0,2);\par
+      lcd.print("Current Speed: ");\par
+      lcd.print(spd1, 0);\par
+      lcd.print("kph");\par
+      break;\par
+    case 2://Relay states\par
+      lcd.print(" Relay States");\par
+      lcd.setCursor(0,1);\par
+      lcd.print("Rnd Trn:");\par
+      lcd.print(relayStates[0]);\par
+      lcd.print("|Brake PS:");\par
+      lcd.print(relayStates[3]);\par
+      lcd.setCursor(0,2);\par
+      lcd.print("    SBC:");\par
+      lcd.print(relayStates[1]);\par
+      lcd.print("|    COMC:");\par
+      lcd.print(relayStates[4]);\par
+      lcd.setCursor(0,3);\par
+      lcd.print("  Gen H:");\par
+      lcd.print(relayStates[2]);\par
+      lcd.print("|     MIC:");\par
+      lcd.print(relayStates[5]);\par
+      break;\par
+    case 3://Warning Screen\par
+      lcd.print(" Warning Messages");\par
+      lcd.setCursor(0,1);\par
+      lcd.print(line1Warning);\par
+      break;\par
+  \}\par
+\}\par
+}
+ 
