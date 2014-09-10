@@ -1,0 +1,696 @@
+{\rtf1\ansi\ansicpg1252\deff0\nouicompat\deflang2057{\fonttbl{\f0\fnil\fcharset0 Courier New;}}
+{\*\generator Riched20 6.3.9600}\viewkind4\uc1 
+\pard\sl276\slmult1\f0\fs16\lang9 /*\par
+** This is the main class which controls systems on board the train.\par
+** It is reponsible for relay states, monitoring sensors, monitoring relays \par
+** and serial communications.\par
+*/\par
+\par
+#include <InverterController.h>\par
+\par
+//Program storage space     22     23      24        25       26     27      28       29        30       31      32      33        34     35     36    37    38    39    40    41    42     43     44   45\par
+const String pinMap[] = \{"R-RGC","R-RGD","R-GER1","R-GER2","R-GES","R-LTF","R-LTR","Z-BR-PLC","R-WHS","R-CSRT","R-FSH","R-CSSB","R-MIE","R-CEN","RH1","RM2","RH2","FWD","REV","RM1","LEDG","LEDR","NC","REN"\};\par
+const byte pinCount = 24;//This is the length of pinMap\par
+const byte pinOffset = 22;// pins 22 - 43 and 45 pins used\par
+const byte serialBufferLength = 128;\par
+const byte thermistorOne = 0;\par
+const byte thermistorTwo = 1;\par
+const byte greenLED = 42;\par
+const byte redLED = 43;\par
+const byte lightsForward = 27;\par
+const byte lightsBackward = 28;\par
+const byte inverterPower = 34;\par
+const byte numberOfMagnets = 1;\par
+const int relayDelay = 200;\par
+const unsigned long updateTime = 1777;//ms\par
+\par
+//input relays\par
+const byte RT = 47;\par
+const byte SBC = 48;\par
+const byte BPS = 49;\par
+const byte GH = 50;\par
+const byte COMC = 51;\par
+const byte MIC = 52;\par
+//53 is connected and spare\par
+\par
+//Common pins\par
+const byte REN = 45;\par
+const byte RRTC = 31;\par
+const byte FIRE = 32;\par
+const byte RSBC = 33;\par
+const byte RCEN = 35;\par
+\par
+//Dynamic memory variables\par
+byte serialBuffer[serialBufferLength];\par
+byte controlBuffer[serialBufferLength];\par
+byte bufferIndex = 0;\par
+byte controlIndex = 0;\par
+bool connectionLost = true; //WIll stop train and request config\par
+bool connectionTimeout = false; // for connection timeout\par
+int currentSpeed = 0;\par
+\par
+//Yes these pins are odd, I have a photo though\par
+InverterController Inverters(39, 40, 41, 36, 37, 38);\par
+\par
+//Thermistors\par
+const float voltRes = (204.8*3.8)/200;//(steps per volt x max voltage in) / range\par
+float thermistorOneReading;\par
+float thermistorTwoReading;\par
+\par
+//hall effect sensors, default 20,000 ~= 4m/s\par
+unsigned long motorOnePeriod = 2857;\par
+unsigned long motorTwoPeriod = 4000;\par
+unsigned long motorOneLastTick = 0;\par
+unsigned long motorTwoLastTick = 0;\par
+//changed from float to byte as hz are only between 0 and 120 anyway\par
+byte motorOneSpeed = 0;\par
+byte motorTwoSpeed = 0;\par
+\par
+//Toggle Switches \par
+bool genEnable = false;\par
+bool regenEnable = false; \par
+bool forwardDrive = true;\par
+\par
+void setup() \{\par
+  \par
+  //Setup all output pins\par
+  for(int n = 0; n < pinCount; n++)\par
+  \{\par
+    pinMode(n+pinOffset, OUTPUT);\par
+    digitalWrite(n+pinOffset, LOW);\par
+  \}\par
+  \par
+  //setup input pins\par
+  for(int n = 47; n < 54; n++)\par
+  \{\par
+    pinMode(n, INPUT_PULLUP);\par
+  \}\par
+  \par
+  //Set LEDs \par
+  digitalWrite(greenLED, HIGH);\par
+  digitalWrite(redLED, HIGH);\par
+  \par
+  //Set interupts Due (21, 20) Mega 2, 3 both pins 20 and 21\par
+  pinMode(21, INPUT_PULLUP);\par
+  pinMode(20, INPUT_PULLUP);\par
+  attachInterrupt(2, motorOneSpeedInterupt, FALLING);\par
+  attachInterrupt(3, motorTwoSpeedInterupt, FALLING);\par
+  \par
+  //Start Serial\par
+  Serial.begin(19200);\par
+  Serial1.begin(19200);\par
+  \par
+  //Request Controler state\par
+  Serial.println("Requesting Config from Controller");\par
+  delay(500);\par
+  Serial1.write('Q');\par
+  Serial1.write(0);\par
+  Serial1.write('\\n');\par
+  delay(500);\par
+  if(Serial1.available() < 1)\par
+  \{\par
+    Serial.println("Controler disconnected");\par
+    digitalWrite(FIRE, HIGH);\par
+  \}\par
+  else\par
+  \{\par
+    Serial.println("Controler Connected");\par
+    //Enable SBC and round train as we have a controler anyway\par
+    digitalWrite(RSBC, HIGH);\par
+    digitalWrite(RRTC, HIGH);\par
+    //We are probs not on fire \par
+    digitalWrite(FIRE, HIGH);\par
+    //and some break resistors wouldnt go a miss\par
+    //digitalWrite(REN, HIGH);\par
+    //also i would like the compressor\par
+    digitalWrite(RCEN, HIGH);\par
+    \par
+    digitalWrite(redLED, LOW);\par
+  \}\par
+  //Serial.println(trainPrep());\par
+  Serial.println("Debug Mode");\par
+  digitalWrite(45, HIGH);\par
+\}\par
+//byte serialIndex = Serial.readBytesUntil(termChar, serialBuffer, serialBufferLength); \par
+unsigned long lastUpdateTime = millis();\par
+void loop() \{\par
+  \par
+  if(currentSpeed == 0 && motorOneSpeed < 2)//less than 2 Hz\par
+  \{\par
+     //Instruct inverters to coast\par
+     //bring in the air brakes\par
+  \}\par
+  \par
+  if(millis() >= updateTime + lastUpdateTime)\par
+  \{\par
+    lastUpdateTime = millis();\par
+    \par
+    if(connectionTimeout == true)\par
+    \{\par
+      connectionLost = true;\par
+      Serial.println("Connection Lost");\par
+    \}\par
+    else\par
+    \{\par
+      connectionTimeout = true;\par
+      Serial.println("Connected");\par
+    \}\par
+    \par
+    digitalWrite(greenLED, HIGH);\par
+\par
+    //Thermistor Reading\par
+    thermistorOneReading = analogRead(thermistorOne) / voltRes;\par
+    thermistorTwoReading = analogRead(thermistorTwo) / voltRes;\par
+    \par
+    //Speed Reading\par
+    // 1Hz speed is 142857us period\par
+    motorOneSpeed = 1000000/(motorOnePeriod*numberOfMagnets); // this is in Hz\par
+    motorTwoSpeed = 1000000/(motorTwoPeriod*numberOfMagnets); // this is in Hz\par
+    if(!connectionLost)\par
+    \{\par
+      serialUpdate();\par
+    \}\par
+    digitalWrite(greenLED, LOW);\par
+  \}\par
+  \par
+  //Check USB serial for debug commands\par
+  while(Serial.available() > 0)\par
+  \{\par
+    byte byteIn = Serial.read();\par
+    if(byteIn == '\\n' || byteIn == '\\r')\par
+    \{\par
+      //do some work\par
+      debugCommand(bufferIndex);\par
+      Serial.println(("Command Processed"));\par
+      bufferIndex = 0;\par
+    \}\par
+    else\par
+    \{\par
+      //add to buffer\par
+      serialBuffer[bufferIndex] = byteIn;\par
+      bufferIndex++;\par
+    \}\par
+  \}\par
+  \par
+  //Check Controler serial link for commands\par
+  while(Serial1.available() > 0)\par
+  \{\par
+    byte byteIn = Serial1.read();\par
+    if(byteIn == '\\n' || byteIn == '\\r')\par
+    \{\par
+      //flash red LED to indicate serial coms\par
+      //digitalWrite(redLED, !digitalRead(redLED));\par
+      //Do some work\par
+      controlerCommand(controlIndex);      \par
+      controlIndex = 0;\par
+    \}\par
+    else\par
+    \{\par
+      controlBuffer[controlIndex] = byteIn;\par
+      controlIndex++;\par
+    \}\par
+  \}\par
+  \par
+  if(connectionLost)\par
+  \{\par
+    digitalWrite(redLED, HIGH);\par
+    //Stop The Train\par
+    //Serial.println("Connection lost");\par
+    digitalWrite(RSBC, LOW); // kill the saftey brake circuit\par
+    //Inverters.setSpeed(0);\par
+    Serial1.write('Q');\par
+    Serial1.write(0);\par
+    Serial1.write('\\n');\par
+    //connectionLost = false; Disabled may break the reconnect!\par
+  \}\par
+\}\par
+\par
+void serialUpdate()\par
+\{\par
+  //Thermistor readings must be converted to byte values\par
+  byte thrm1 = round(thermistorOneReading);\par
+  byte thrm2 = round(thermistorTwoReading);\par
+  Serial1.write('T');\par
+  Serial1.write(thrm1);\par
+  Serial1.write('Y');\par
+  Serial1.write(thrm2);\par
+  Serial1.write('V');\par
+  Serial1.write(motorOneSpeed);\par
+  Serial1.write('B');\par
+  Serial1.write(motorTwoSpeed);\par
+  Serial1.write('R');\par
+  byte states = 0;\par
+    //note: MIC is the last input pin, RT is the first\par
+  for(byte b = 0; b < MIC - RT; b++)\par
+  \{\par
+    states |= (digitalRead(RT+b) << b);\par
+    //Serial.println((digitalRead(RT+b) << b), BIN);\par
+  \}\par
+  //Serial.println(states, BIN);\par
+  Serial1.write('S');\par
+  Serial1.write(currentSpeed);\par
+  Serial1.write(states);\par
+  Serial1.write('\\n');\par
+\}\par
+\par
+//Comands from the hand held controler\par
+void controlerCommand(byte serialIndex)\par
+\{\par
+  //The 'U' command will get this far\par
+  connectionTimeout = false;\par
+  //Do Some Work\par
+  for(int s = 0; s < serialIndex; s++)\par
+  \{\par
+    if(controlBuffer[s] == 'U')\par
+    \{\par
+      //Serial.println("U");\par
+      return;\par
+    \}\par
+    //checksum\par
+    if(s + 2 < serialIndex && controlBuffer[s+1] == controlBuffer[s+2])\par
+    \{\par
+      //Only a valid command can revive from conection lost.\par
+      if(connectionLost == true)\par
+      \{\par
+        Serial.println("Controler Connected");\par
+        //Enable SBC and round train as we have a controler anyway\par
+        digitalWrite(RSBC, HIGH);\par
+        digitalWrite(RRTC, HIGH);\par
+        //We are probs not on fire \par
+        digitalWrite(FIRE, HIGH);\par
+        //and some break resistors wouldnt go a miss\par
+        //digitalWrite(REN, HIGH);\par
+        //also i would like the compressor\par
+        digitalWrite(RCEN, HIGH);\par
+        \par
+        digitalWrite(redLED, LOW);\par
+      \}\par
+      connectionLost = false;\par
+      switch (controlBuffer[s])\par
+      \{\par
+        case 'S': //Speed\par
+          currentSpeed = controlBuffer[s+1];\par
+          Inverters.setSpeed(controlBuffer[s+1]);\par
+          s += 2;\par
+          break;\par
+        case 'D': //Direction\par
+          if(commandState(controlBuffer[s+1]))\par
+          \{\par
+            Inverters.driveForward();\par
+            digitalWrite(lightsForward, HIGH);\par
+            digitalWrite(lightsBackward, LOW);\par
+          \}\par
+          else\par
+          \{\par
+            Inverters.driveReverse();\par
+            digitalWrite(lightsForward, LOW);\par
+            digitalWrite(lightsBackward, HIGH);\par
+          \}\par
+          s += 2;\par
+          break;\par
+        case 'G': //Genorator\par
+          if(commandState(controlBuffer[s+1]))\par
+          \{\par
+            startGenorator();\par
+          \}\par
+          else\par
+          \{\par
+            stopGenorator();\par
+          \}\par
+          s += 2;\par
+          break;\par
+        case 'W': //Whistle\par
+          Serial.println("Whistle");\par
+          if(commandState(controlBuffer[s+1]))\par
+          \{\par
+            digitalWrite(30, HIGH);\par
+          \}\par
+          else\par
+          \{\par
+            digitalWrite(30, LOW);\par
+          \}\par
+          s += 2;\par
+          break;\par
+        case 'C': // Charge Regen\par
+          if(commandState(controlBuffer[s+1]))\par
+          \{\par
+            //charge regen\par
+            digitalWrite(22, HIGH);\par
+          \}\par
+          else\par
+          \{\par
+            digitalWrite(22, LOW);\par
+          \}\par
+          s += 2;\par
+          break;\par
+        case 'Z': //Drive Regen\par
+          if(!commandState(controlBuffer[s+1]))\par
+          \{\par
+            //Drive Regen\par
+            digitalWrite(23, HIGH);\par
+          \}\par
+          else\par
+          \{\par
+            digitalWrite(23, LOW);\par
+          \}\par
+          s += 2;\par
+          break;\par
+      \}\par
+    \}\par
+    else\par
+    \{\par
+      Serial.println("junk");\par
+    \}\par
+  \}\par
+\}\par
+\par
+bool commandState(byte state)\par
+\{\par
+  //170 = 10101010 = true\par
+  if(state == 170)\par
+  \{\par
+    return true;\par
+  \}\par
+  //85 = 01010101 = false\par
+  else if(state == 85)\par
+  \{\par
+    return false;\par
+  \}\par
+\}\par
+\par
+//This is for debug commands\par
+void debugCommand(byte serialIndex)\par
+\{\par
+  char charCommand[serialIndex+1];\par
+  for(int n = 0; n < serialIndex; n ++)\par
+  \{\par
+    charCommand[n] = serialBuffer[n];\par
+  \}\par
+  charCommand[serialIndex] = '\\0';\par
+  String command = String(charCommand);\par
+  if(command == "list")\par
+  \{\par
+    for(byte n = 0; n < pinCount; n++)\par
+    \{\par
+      //Serial.println("Printing");\par
+      Serial.print(pinMap[n]);\par
+      Serial.print((" (Pin "));\par
+      Serial.print(n+pinOffset);\par
+      Serial.print((") State = "));\par
+      Serial.println(digitalRead(pinOffset+n));\par
+    \}\par
+  \}\par
+  else if(command == "speed1")\par
+  \{\par
+    Inverters.setSpeed(1);\par
+  \}\par
+  else if(command == "speed2")\par
+  \{\par
+    Inverters.setSpeed(2);\par
+  \}\par
+  else if(command == "speed3")\par
+  \{\par
+    Inverters.setSpeed(3);\par
+  \}\par
+  else if(command == "speed4")\par
+  \{\par
+    Inverters.setSpeed(4);\par
+  \}\par
+  else if(command == "forward")\par
+  \{\par
+    Inverters.driveForward();\par
+  \}\par
+  else if(command == "coast")\par
+  \{\par
+    Inverters.coast();\par
+  \}\par
+  else if(command == "startgen")\par
+  \{\par
+    if(startGenorator())\par
+      Serial.println("Genorator Online");\par
+    else\par
+      Serial.println("Genorator Failed To Start");\par
+  \}\par
+  else if(command == "stopgen")\par
+  \{\par
+    stopGenorator();\par
+  \}\par
+  else if(command == "inputs")\par
+  \{\par
+    Serial.print("RT: ");\par
+    Serial.println(!digitalRead(RT));\par
+    Serial.print("SBC: ");\par
+    Serial.println(!digitalRead(SBC));\par
+    Serial.print("BPS: ");\par
+    Serial.println(!digitalRead(BPS));\par
+    Serial.print("GH: ");\par
+    Serial.println(!digitalRead(GH));\par
+    Serial.print("COMC: ");\par
+    Serial.println(!digitalRead(COMC));\par
+    Serial.print("MIC: ");\par
+    Serial.println(!digitalRead(MIC));\par
+  \}\par
+  else if(command == "flick")\par
+  \{\par
+    flick();\par
+  \}\par
+  else if(command == "sensors")\par
+  \{\par
+    Serial.print(("Thermistor One: "));\par
+    Serial.println(thermistorOneReading);\par
+    Serial.print(("Thermistor Two: "));\par
+    Serial.println(thermistorTwoReading);\par
+    Serial.print("Motor One Speed: ");\par
+    Serial.println(motorOneSpeed);\par
+    Serial.print("Motor Two Speed: ");\par
+    Serial.println(motorTwoSpeed);\par
+  \}\par
+  else\par
+  \{\par
+    int pin = command.toInt();\par
+    if(pin == 0)\par
+    \{\par
+      pin = getPinNumber(command);\par
+    \}\par
+    if (pin != -1)\par
+    \{\par
+      Serial.print(("Toggeling pin "));\par
+      Serial.println(pin);\par
+      togglePin(pin);\par
+    \}\par
+    else\par
+    \{\par
+      Serial.print(("No such pin name: "));\par
+      Serial.println(command);\par
+    \}\par
+  \}\par
+\}\par
+\par
+String printPinState(byte index)\par
+\{\par
+  Serial.print(pinMap[index]);\par
+  Serial.print((" (Pin "));\par
+  Serial.print(index+pinOffset);\par
+  Serial.print((") State = "));\par
+  Serial.println(digitalRead(pinOffset+index));\par
+\}\par
+\par
+void togglePin(byte pinNumber)\par
+\{\par
+  digitalWrite(pinNumber, !digitalRead(pinNumber));\par
+\}\par
+\par
+\par
+void motorOneSpeedInterupt()\par
+\{\par
+  motorOnePeriod = micros() - motorOneLastTick;\par
+  motorOneLastTick = micros();\par
+  Serial.println("Motor1 int");\par
+\}\par
+\par
+void motorTwoSpeedInterupt()\par
+\{\par
+  motorTwoPeriod = micros() - motorTwoLastTick;\par
+  motorTwoLastTick = micros();\par
+  Serial.println("Motor2 int");\par
+\}\par
+\par
+String trainPrep()\par
+\{\par
+  Serial.println("Starting Train Prep");\par
+  \par
+  String returnString = "FAIL: ";\par
+  \par
+  //Check inital relay states note that ALL inputs are inverse\par
+  //All relays should be OPEN\par
+  if(!(digitalRead(RT) && digitalRead(SBC) && digitalRead(BPS) && digitalRead(GH) && digitalRead(COMC) && digitalRead(MIC)))\par
+  \{\par
+    returnString += "INITAL RELAY STATES WRONG, ";\par
+  \}\par
+  //Next roundtrain tests\par
+  digitalWrite(31, HIGH); //RTC RELAY\par
+  digitalWrite(32, HIGH); //Fire relay\par
+  delay(relayDelay);\par
+  if(digitalRead(RT))// if RT not on\par
+  \{\par
+    returnString += "RTC DID NOT COME UP, ";\par
+  \}\par
+  digitalWrite(31, LOW);\par
+  delay(relayDelay);\par
+  if(!digitalRead(RT))\par
+  \{\par
+    returnString += "RTC UP AFTER RTC OPEN, ";\par
+  \}\par
+  digitalWrite(31, HIGH);\par
+  digitalWrite(32, LOW);\par
+  delay(relayDelay);\par
+  if(!digitalRead(RT))\par
+  \{\par
+    returnString += "RTC UP AFTER FIRE OPEN, ";\par
+  \}\par
+  digitalWrite(31, LOW);\par
+  digitalWrite(33, HIGH);\par
+  delay(relayDelay);\par
+  if(digitalRead(SBC))\par
+  \{\par
+    returnString += "SBC DID NOT COME UP, ";\par
+  \}\par
+  //Perform brake test\par
+  digitalWrite(31, HIGH); // Enable RTC\par
+  digitalWrite(32, HIGH); // Fire Systems Healthy\par
+  if(forwardDrive)\par
+    digitalWrite(27, HIGH);\par
+  else\par
+    digitalWrite(28, HIGH);\par
+    \par
+  if(genEnable)\par
+  \{\par
+    if(!startGenorator())\par
+    \{\par
+      returnString += "GEN WILL NOT START, ";\par
+    \}\par
+  \}   \par
+  \par
+  digitalWrite(29, HIGH); // Release Brakes\par
+  delay(3000); // 3 seconds for brakes to disengage\par
+\par
+  if(digitalRead(BPS))\par
+  \{\par
+    returnString += "BRAKES WILL NOT RELEASE, ";\par
+  \}\par
+  digitalWrite(29, LOW);\par
+  \par
+  if(returnString == "FAIL: ")\par
+  \{\par
+    returnString = "ALL TESTS PASSED";\par
+    digitalWrite(redLED, LOW);\par
+    digitalWrite(greenLED, HIGH);\par
+  \}\par
+  else\par
+  \{\par
+    digitalWrite(redLED, HIGH);\par
+    digitalWrite(greenLED, LOW); \par
+  \}  \par
+  return returnString;\par
+\}\par
+\par
+void processSerialCommand(byte index)\par
+\{\par
+  byte bytes[2];\par
+  for(int n = 0; n <= index; n += 2)\par
+  \{\par
+    bytes[0] = controlBuffer[n];\par
+    bytes[1] = controlBuffer[n+1];\par
+    if(bytes[0] == 'R')\par
+    \{\par
+      if(bytes[1] == 1)\par
+      \{\par
+        regenEnable = true;\par
+      \}\par
+      else\par
+      \{\par
+        regenEnable = false;\par
+      \}\par
+    \}\par
+    else if(bytes[0] == 'G')\par
+    \{\par
+      if(bytes[1] == 1)\par
+      \{\par
+        genEnable = true;\par
+      \}\par
+      else\par
+      \{\par
+        genEnable = false;\par
+      \}\par
+    \}\par
+    else if(bytes[0] == 'F')\par
+    \{\par
+      if(bytes[1] == 1)\par
+        \{\par
+          genEnable = true;\par
+        \}\par
+        else\par
+        \{\par
+          genEnable = false;\par
+        \}\par
+    \}\par
+    else if (bytes[0] == 'P')\par
+    \{\par
+      Inverters.setSpeed(bytes[1]);\par
+    \}\par
+  \}\par
+\}\par
+\par
+bool startGenorator()\par
+\{\par
+  unsigned long startTime = millis();\par
+  digitalWrite(24, HIGH); //GER1\par
+  delay(relayDelay);\par
+  digitalWrite(25, HIGH); //GER2\par
+  delay(relayDelay);\par
+  digitalWrite(26, HIGH); //GES\par
+//  while(digitalRead(GH))//While not genorator healthy\par
+//  \{\par
+//    delay(100);\par
+//    if(startTime + 4000 < millis())\par
+//    \{\par
+//      digitalWrite(24, LOW);\par
+//      digitalWrite(25, LOW);\par
+//      digitalWrite(26, LOW);\par
+//      return false;\par
+//    \}\par
+//  \}\par
+  delay(4000);\par
+  digitalWrite(26, LOW);\par
+  delay(1000);\par
+  digitalWrite(inverterPower, HIGH); //Enable the motor inverters, yay!\par
+  return true;\par
+\}\par
+\par
+void stopGenorator()\par
+\{\par
+  digitalWrite(inverterPower, LOW);\par
+  delay(1000);\par
+  digitalWrite(24, LOW);\par
+  digitalWrite(25, LOW);\par
+\}\par
+\par
+void flick()\par
+\{\par
+  Serial.println("Disabled");\par
+\}\par
+\par
+int getPinNumber(String pinName)\par
+\{\par
+  for(int n = 0; n < pinCount; n++)\par
+  \{\par
+    if(pinMap[n] == (pinName))\par
+    \{\par
+      return n + pinOffset;\par
+    \}\par
+  \}\par
+  return -1;\par
+\}\par
+  \par
+}
+ 
